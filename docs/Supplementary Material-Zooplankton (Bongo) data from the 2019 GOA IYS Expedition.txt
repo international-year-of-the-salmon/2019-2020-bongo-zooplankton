@@ -1,0 +1,138 @@
+Protocols for Zooplankton (Bongo) Data from the 2019 Gulf of Alaska International Year of the Salmon Expedition
+
+
+Zooplankton Sample Collection Protocol # 1 
+Setting up the net for sampling: 
+1.	Attach the cod-end to the collar of the net, ensure that the mesh size of the cod end corresponds to that of the net 
+2.	Clip the flowmeter into the mouth of the net. Make sure to use the same flowmeter for the same net each time. Ensure that flowmeter cables are taught, and the flowmeter is in the middle of the net ring 
+3.	Record the “before” flowmeter reading 
+4.	Using a swivel shackle attach two ten-pound canon balls to the center line between the two nets (for bongo net only) 
+5.	Attach the zooplankton net via the top ring to the rope with a figure-of-eight knot or locking carabiner 
+
+Collecting Samples by Vertical Net Tow 
+
+1.	Lower the net carefully over the side of the boat, making sure that the net and line are not tangled 
+2.	Lower the net to approximately 5m above bottom 
+3.	Haul up the net using the hauler, this should ideally be done at approx. 0.5-1.0 meter/sec, keeping the line perpendicular to the side of the boat 
+4.	Once the net is up, pull the canon balls and net onto the deck of the boat 
+5.	Take the “after” flowmeter reading 
+6.	Follow protocols for rinsing and sample collection (below) 
+
+Net Rinsing and Sample Collection 
+
+1.	Using a washdown pump (or buckets of seawater) rinse the net beginning at the top and working down. Do not allow water to go in through the mouth of the net 
+2.	Once the majority of the sample is in the cod end, unscrew it from the collar and spray the remaining sample into the cod end using a filtered seawater sprayer (filtered seawater is seawater that has passed through a GF/F filter) 
+3.	Using filtered seawater, spray the contents of the cod end into the appropriate sample container (see below for instructions). If the sample is very soupy and the cod end contains a lot of excess seawater, spray the contents into a sieve (of the same mesh size) before transferring to the sample container 
+
+Sample for formalin preservation: 
+
+•	Collect sample in a clean 250 mL PET jar with a secure water-tight lid 
+•	Label jar lid with sample station, date, net mesh size, sample fraction, and sample ID 
+•	Preserve with 25 mL of buffered 100% formalin, top with filtered seawater for a total formalin concentration of 10%. Formalin is a carcinogen and mutagen, take extra caution when handling. Wear gloves, and safety goggles and use in a well-ventilated area. Receive instructions before handling (read and understand MSDS form) 
+•	Fill out a waterproof label with sample date, station, cruise, time, flowmeter, net, depth, collector initials and sample ID, and place inside jar 
+•	Store in a well-ventilated area 
+•	For high-biomass samples, split the sample into two jars (split does not have to be exactly 50%) and label top of jar as partial sample (i.e. “1 of 2”). Biomass is high when sample jar is >60-70% or >150 mL plankton. 
+
+Sample for ethanol preservation (DNA) 
+
+•	Collect sample with as little seawater as possible in a clean 250 mL PET jar with a secure water-tight lid 
+•	Label jar lid with sample station, date, net mesh size, sample fraction, and sample ID 
+•	Top jar with 95% non-denatured ethanol, there should be 3-4 times more ethanol than plankton volume (you can use the ethanol to spray the sample into the jar if need be). Ethanol is highly flammable, take caution when handling, use in a well-ventilated space and keep away from flame/flammable materials. Receive instructions before handling (read and understand MSDS form) 
+•	Fill out a waterproof label with sample date, station, cruise, time, flowmeter, net, depth, collector initials and sample ID, and place inside jar 
+•	Store in a cool place (20-22°C) 
+•	For high-biomass samples, decant after 1 day of storage and refill with fresh 95% non-denatured ethanol. This should be repeated until the ethanol remains clear 
+•	Alternatively, if the plankton biomass is high such that the sample jar is >30% or >75 mL plankton, split the sample into two jars (split does not have to be exactly 50%) and label top of jar as partial sample (i.e., “1 of 2”). Top up both jars with ethanol as previously directed. 
+•	Check samples periodically for evaporation and purification 
+
+Equipment
+ 
+•	Flowmeter
+•	Swivel shack
+•	Two 10lb canon balls
+•	Locking carabiner
+•	Washdown pump
+•	Filtered seawater sprayer (GF/F Filter)
+•	Sieve
+•	Sample container
+•	250mL PET jars
+•	25mL of 100% buffered formalin
+•	Waterproof labels
+•	95% non-denatured ethanol
+ 
+
+
+Size fractionating zooplankton samples 
+
+Sieve set                     
+4mm 
+
+2mm 
+
+1mm 
+
+500µm 
+
+250µm 
+
+125µm 
+
+64µm 
+
+
+Processing a net sample 
+1.	Place the sieve column inside a plastic tray so that water is not spilled in the lab. Make sure that the sieves are in the correct order of descending size! 
+2.	Pour zooplankton sample through the set of sieves. 
+3.	Using the pressurised spray bottle (or squeeze bottle), filled with GF/F filtered sea water, gently spray down the top (4mm) sieve so that any animals smaller than 4mm wash into the sieve below. Keep the sieve on the column while doing this so that any animals that pass through will fall into the sieves below. Now take the 4mm sieve off the sieve column and place it on a plastic tray. 
+4.	Repeat the washing down process for each subsequent sieve until you reach the 64µm sieve. This last sieve does not need to be washed down. 
+
+The next step is to transfer the contents of each sieve size fraction (except the 4mm) to a GF/F filter. For each sieve: 
+a.	Wash the contents of the sieve into a beaker using the spray bottle with filtered sea water. 
+b.	Take a pre-combusted and pre-weighed GF/F filter from its microplate holder and place it on the vacuum flask filter holder. If there is not much zooplankton material, then a 25mm filter should be used. If there is a lot of material, then use a 47mm holder. 
+c.	Record the filter number (written on the microplate). 
+d.	Pour the contents of the beaker into the filter funnel (not all my fit in the first pour) and turn on the pump. 
+e.	Filter the entire zooplankton size fraction onto the filter. Make sure to wash down the sides of the beaker and the filter funnel with particle free seawater as the zooplankton tend to stick to the sides of both. 
+f.	Once all the water has drained from the funnel turn the pump off. 
+g.	Remove filter, now with zooplankton, and place back into the microplate that it came from. 
+h.	Rinse the funnel prior to the next sample filtering to remove any animals that may have attached there. 
+i.	Repeat the process with each subsequent sieve. Always be careful to record the filter number matching the sieve. 
+*NB*. If there is so much material on the filter that it will not fit in the microplate holder then use a petri dish. Be sure to write the filter number on the dish. Alternatively, multiple filters can be used for a sample. 
+
+The 4mm fraction 
+
+The 4mm sieve will contain a range of animals which can be of widely varying size. Our aim is to separate these animals and process them individually. 
+
+Measure each animal to the nearest mm (this enables us to reconstruct the wet weight), recording the taxonomic group, e.g., euphausiid, hyperiid amphipod, thecosome pteropod, tunicate, chaetognath, copepod. Species level identification is ideal. 
+
+For drying purposes, the animals of a taxon can be grouped into size bins: 
+•	5mm increments for euphausiids, amphipods, fish, copepods, pteropods 
+•	10mm increments for chaetognaths 
+•	20mm increments for ctenophores / hydromedusae /salps 
+
+Record the number of individuals in each group. 
+Petri dishes / Eppendorf tubes can be used for drying purposes. 
+It is important to collect all material from the 4mm sieve so that total biomass can be estimated. If it is too difficult to remove and measure individual animals (e.g., if there are a lot of damaged gelatinous organisms / remains of animals after you have picked individuals) then filter the contents onto a GF/F and record it as coming from the 4mm fraction. 
+
+Once finished, wash all sieves under freshwater or particle free water so that they are clean for the next station. 
+
+Storing the Isotope / biomass samples 
+
+Dry all samples at 50oC for > 24 hours. 
+or 
+Freeze the samples at -20oC.
+
+Equipment
+ 
+•	Sieve set (4mm, 2mm, 1mm, 500µm, 250µm, 125µm, 64µm)
+•	Plastic trays
+•	Pressurized spray bottle/squeeze bottle
+•	GF/F filter 47mm & 25mm
+•	Vacuum flask and vacuum flask filter holder
+•	Beakers
+•	Filter funnel
+•	Pump
+•	Petri dishes
+•	Eppendorf tubes
+ 
+
+Onboard Infrastructure Requirements
+•	Low heat oven OR -20°C freezer
