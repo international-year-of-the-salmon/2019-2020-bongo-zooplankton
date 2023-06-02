@@ -18,6 +18,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+* Using updated file (IYSZoopAbund2019_2020Long.csv and IYSKaganoSpecRemovedfromNet.csv) from Joanne Breckenridge to standardize the data to Darwin Core for publication to OBIS. 
+* Calanus marshallae and Calanus spp. have been changed to Neocalanus/Calanus spp.
+
+### Added
+
+### Removed
+
+## [Unreleased]
+
 ## [1.0.0] - 2021-04-21
 
 ### Changed
