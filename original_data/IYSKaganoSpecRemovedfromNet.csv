@@ -1,14 +1,14 @@
 station,date,time,vol_flow_est,vol_depth_est,prop_total_sample,sf_proc,prop_sf_proc,genus,species,stage,sex,id,ind_counted,ind_total,abund_m3_flow_est,abund_m3_depth_est,notes,year,yearletter,StationYear
-3,2019-02-21,20:21,44.7,49.09,0.5,,1,Aequorea,,,,Aequorea,1,1,0.022371365,0.020370748, (1x Aequoria 44mm put in formalin jar) [source = bongo metadata],2019,A,A 3
-10,2019-02-24,16:50,44.11,49.09,1,,1,Salpa,aspera,,,Salpa aspera,12,12,0.272047155,0.244448971,Salps removed from this sample and frozen separately in petri dishes [source = bongo metadata],2019,A,A 10
-11,2019-02-25,2:05,45.6,49.09,1,,1,Salpa,aspera,,,Salpa aspera,13,13,0.285087719,0.264819719,Specimens removed from sample [source = 'samples collected' in IYS cruise logbook_2019],2019,A,A 11
-11,2019-02-25,2:05,45.6,49.09,1,,1,Neocalanus,cristatus,C5,,Neocalanus cristatus,3,3,0.065789474,0.061112243,Specimens removed from sample [source = 'samples collected' in IYS cruise logbook_2019],2019,A,A 11
-11,2019-02-25,2:05,45.6,49.09,1,,1,Euphausia,pacifica,,,Euphausia pacifica,2,2,0.043859649,0.040741495,Specimens removed from sample [source = 'samples collected' in IYS cruise logbook_2019],2019,A,A 11
-19,2019-02-27,22:27,41,49.09,1,,1,Beroe sp.,,,,Beroe sp.,1,1,0.024390244,0.020370748,Specimen removed from sample [source = bongo metadata],2019,A,A 19
-33,2019-03-04,13:45,42.2,49.09,1,,1,Salpa,aspera,,,Salpa aspera,4,4,0.09478673,0.08148299,"Specimen removed from sample [source = bongo metadata], note that previous correction added 1, not 5",2019,A,A 33
-40,2019-03-06,21:10,40.9,49.09,1,,1,Neocalanus,cristatus,C5,,Neocalanus cristatus,9,9,0.2200489,0.183336728,Specimens removed from sample [source = 'samples collected' in IYS cruise logbook_2019],2019,A,A 40
-44,2019-03-08,5:58,42.8,49.09,1,,1,Neocalanus,cristatus,C5,,Neocalanus cristatus,3,3,0.070093458,0.061112243,Specimens removed from sample [source = 'samples collected' in IYS cruise logbook_2019],2019,A,A 44
-45,2019-03-08,14:35,44.3,49.09,1,,1,Neocalanus,cristatus,C5,,Neocalanus cristatus,9,9,0.203160271,0.183336728,Specimens removed from sample [source = 'samples collected' in IYS cruise logbook_2019],2019,A,A 45
-46,2019-03-09,0:19,39.1,49.09,1,,1,Neocalanus,cristatus,C5,,Neocalanus cristatus,9,9,0.230179028,0.183336728,Specimens removed from sample [source = 'samples collected' in IYS cruise logbook_2019],2019,A,A 46
-47,2019-03-09,8:30,40.1,49.09,1,,1,Clio,pyramidata,,,Clio pyramidata,1,1,0.024937656,0.020370748,Specimens removed from sample [source = 'samples collected' in IYS cruise logbook_2019],2019,A,A 47
-55,2019-03-12,10:24,0.6,49.09,1,,1,Neocalanus,cristatus,C5,,Neocalanus cristatus,3,3,5,0.061112243,Specimens removed from sample [source = 'samples collected' in IYS cruise logbook_2019],2019,A,A 55
+3,2/21/2019,20:21,44.7,49.09,0.5,,1,Aequorea,,,,Aequorea,1,1,0.022371365,0.020370748, (1x Aequoria 44mm put in formalin jar) [source = bongo metadata],2019,A,A 3
+10,2/24/2019,16:50,44.11,49.09,1,,1,Salpa,aspera,,,Salpa aspera,12,12,0.272047155,0.244448971,Salps removed from this sample and frozen separately in petri dishes [source = bongo metadata],2019,A,A 10
+11,2/25/2019,2:05,45.6,49.09,1,,1,Salpa,aspera,,,Salpa aspera,13,13,0.285087719,0.264819719,Specimens removed from sample [source = 'samples collected' in IYS cruise logbook_2019],2019,A,A 11
+11,2/25/2019,2:05,45.6,49.09,1,,1,Neocalanus,cristatus,C5,,Neocalanus cristatus,3,3,0.065789474,0.061112243,Specimens removed from sample [source = 'samples collected' in IYS cruise logbook_2019],2019,A,A 11
+11,2/25/2019,2:05,45.6,49.09,1,,1,Euphausia,pacifica,,,Euphausia pacifica,2,2,0.043859649,0.040741495,Specimens removed from sample [source = 'samples collected' in IYS cruise logbook_2019],2019,A,A 11
+19,2/27/2019,22:27,41,49.09,1,,1,Beroe sp.,,,,Beroe sp.,1,1,0.024390244,0.020370748,Specimen removed from sample [source = bongo metadata],2019,A,A 19
+33,3/4/2019,13:45,42.2,49.09,1,,1,Salpa,aspera,,,Salpa aspera,4,4,0.09478673,0.08148299,"Specimen removed from sample [source = bongo metadata], note that previous correction added 1, not 5",2019,A,A 33
+40,3/6/2019,21:10,40.9,49.09,1,,1,Neocalanus,cristatus,C5,,Neocalanus cristatus,9,9,0.2200489,0.183336728,Specimens removed from sample [source = 'samples collected' in IYS cruise logbook_2019],2019,A,A 40
+44,3/8/2019,5:58,42.8,49.09,1,,1,Neocalanus,cristatus,C5,,Neocalanus cristatus,3,3,0.070093458,0.061112243,Specimens removed from sample [source = 'samples collected' in IYS cruise logbook_2019],2019,A,A 44
+45,3/8/2019,14:35,44.3,49.09,1,,1,Neocalanus,cristatus,C5,,Neocalanus cristatus,9,9,0.203160271,0.183336728,Specimens removed from sample [source = 'samples collected' in IYS cruise logbook_2019],2019,A,A 45
+46,3/9/2019,0:19,39.1,49.09,1,,1,Neocalanus,cristatus,C5,,Neocalanus cristatus,9,9,0.230179028,0.183336728,Specimens removed from sample [source = 'samples collected' in IYS cruise logbook_2019],2019,A,A 46
+47,3/9/2019,8:30,40.1,49.09,1,,1,Clio,pyramidata,,,Clio pyramidata,1,1,0.024937656,0.020370748,Specimens removed from sample [source = 'samples collected' in IYS cruise logbook_2019],2019,A,A 47
+55,3/12/2019,10:24,0.6,49.09,1,,1,Neocalanus,cristatus,C5,,Neocalanus cristatus,3,3,5,0.061112243,Specimens removed from sample [source = 'samples collected' in IYS cruise logbook_2019],2019,A,A 55

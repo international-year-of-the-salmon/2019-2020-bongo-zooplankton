@@ -20,31 +20,10 @@ library(uuid)
 library(gtools)
 ```
 
-The raw data is stored on GoogleDrive. The first step is to download the files from Google Drive to a local folder on your computer's hard drive. The bongo data includes both dry weight isotope data as well as (estimated) abundance data. The metadata associated to the data collected is also found in different sheets. 
-
-``` {r file_download, eval = FALSE}
-# Make sure your folder path exists already (e.g. ./Bongo/raw_data)
-drive_download("https://docs.google.com/spreadsheets/d/1vvIwlsIkuc9vHtVrv2l3pXeyoWpEX_gw/edit#gid=287253584", 
-               path = here::here("original_data", "Zoop Bongo Isotopes_IYS_Dry Weight_Mar31.xlsx"),
-               overwrite = TRUE)
-
-drive_download("https://docs.google.com/spreadsheets/d/1Yp4tNZmzlAKGXo6b3LRckdnFtMB4q0ei/edit#gid=1001885079",
-               path = here::here("original_data", "IYS cruise logbook_2019.xlsx"), 
-               overwrite = TRUE)
-
-drive_download("https://docs.google.com/spreadsheets/d/1Y_Ve8yiAu06NIkIlnKfj8KOx4RABjGqp/edit#gid=723141179",
-               path = here::here("original_data", "IYS zooplankton taxonomy sample metadata 20210115.xlsx"),
-               overwrite = TRUE)
-
-drive_download("https://docs.google.com/spreadsheets/d/1YGeQofECd_c7ZSaThwz77sb3lXeEl7y4/edit#gid=782668911",
-               path = here::here("original_data", "IYS Zooplankton Taxonomy Abundance Data.xlsx"),
-               overwrite = TRUE)
-```
-
-Read in the datasets from your local drive. To connect additional metadata information regarding the bongo set deployments, we join another sheet from a different dataset. The dataframe `bongo` includes the sample_ids of only the zooplankton, whereas the bongo_metadata dataframe does not include this information. However, bongo_metadata dataframe includes important metadata that we - eventually - need to join to the sample_ids.
+Read in the datasets from your local drive. 
 
 ``` {r data wrangle, eval = FALSE}
-bongo <- read_excel(here("original_data", "IYS cruise logbook_2019.xlsx"),
+bongo_2019 <- read_excel(here("original_data", "IYS cruise logbook_2019.xlsx"),
                              sheet = "Bongo metadata") %>%
   janitor::clean_names() %>% 
   mutate(Date = lubridate::ymd(date),
@@ -53,24 +32,59 @@ bongo <- read_excel(here("original_data", "IYS cruise logbook_2019.xlsx"),
                                                format="%Y-%m-%d %H:%M:%S", 
                                                tz="Asia/Kamchatka")),
          eventDate = str_replace(eventDate, "\\+00:00", "Z")) %>%
-  dplyr::rename(net = net_number)
+  dplyr::rename(net = net_number,
+                sampleSizeValue = final_volume_filtered,
+                fieldNotes = notes)
 
-bongo <- bongo %>%
-  filter(net %in% c("1", "ND")) %>%
-  filter(preservation == "formalin") %>%
-  mutate(eventID = paste("IYS2019", "Kaganovsky", station, net, sep = "-")) %>%
+bongo_2019 <- bongo_2019 %>%
+  filter(net == 1) %>%
+  mutate(eventID = paste("IYS2019", "Kaganovsky", station, "Bongo", net, sep = "-"),
+         samplingEffort = "volume sewater filtered",
+         sampleSizeUnit = "cubic meters") %>%
   distinct()
+
+bongo_2020 <- read_excel(here("original_data", "Bongo2020_metadata.xlsx"),
+                         sheet = "Bongo metadata") %>%
+  janitor::clean_names() %>%
+  mutate(Date = lubridate::ymd(date),
+         Time = format(time, format = "%H:%M:%S"),
+         eventDate = format_iso_8601(as.POSIXct(paste(Date, Time),
+                                                format = "%Y-%m-%d %H:%M:%S",
+                                                tz = "America/Los_Angeles")),
+         eventDate = str_replace(eventDate, "\\+00:00", "Z")) %>%
+  dplyr::rename(net = net_number,
+                fieldNotes = notes)
+
+bongo_2020[2] <- lapply(bongo_2020[2], function (x) {
+  x1 <- type.convert(as.character(x), as.is = TRUE)
+  ifelse(grepl("^[0-9.]+$", x1), round(as.numeric(x1)), x1)}
+)
+
+# As per Joanne Breckenridge (UBC): "where flowmeter-estimated volume is less than 50% of depth-estimated volume, we use the depth-estimated volume to calculate the abundance". 
+
+bongo_2020 <- bongo_2020 %>%
+  filter(net == 1) %>%
+  mutate(sampleSizeValue = ifelse(flowmeter_vs_depth_estimated_ratio <= 0.5, depth_estimated_volume_filtered_m3,
+                                  flowmeter_volume_filtered_m3),
+         samplingEffort = "volume seawater filtered",
+         sampleSizeUnit = "cubic meters",
+         eventID = paste("IYS2020", "Legacy", station, gear, net, sep = "-")) %>%
+  distinct() %>%
+  rename(depth = depth_m,
+         sample_depth = sample_depth_m,
+         revs = revolutions,
+         tow_distance = tow_distance_m,
+         flowmeter_volume_filtered = flowmeter_volume_filtered_m3,
+         depth_estimated_volume_filtered = depth_estimated_volume_filtered_m3) %>%
+  mutate(qf = NA,
+         sub_sample = NA)
+
+bongo <- rbind(bongo_2019, bongo_2020)
 
 bongo$year <- as.numeric(format(as.Date(bongo$eventDate), "%Y"))
 bongo$month <- as.numeric(format(as.Date(bongo$eventDate), "%m"))
 bongo$day <- as.numeric(format(as.Date(bongo$eventDate), "%d"))
 ```
-
-Dataframes are created for each unique `eventID` layer (cruise, station, cast, sample), with unique associated columns. Eventually, the data frames get joined, and the event Core gets saved locally and in Google Drive. A visual diagram of the structure of the Bongo dataset is provided [here](https://lucid.app/lucidchart/71f5b051-7eae-4ad6-94b0-f4234037cb62/edit?beaconFlowId=3DD847BF3F2E52DA&page=0_0#). For the Event Core, most of the information for the unique layers can come from the `bongo_fnl` dataframe, whereas information pertaining specifically to the sample_ids will have to come from the `bongo` dataframe. 
-
-No Bongo sets were conducted at station 51 and 52 due to bad weather, so no coordinates were collected (reflected as 'ND'). Therefore, these need to be removed before calculating the associated coordinateUncertaintyInMeters. However in the final event Core they need to be added (to station level), along with associated fieldNotes/eventRemarks. 
-
-While samplingProtocol is not a required term, it is useful to give a description. Once/If a document or paper is published, the samplingProtocol can link to the DOI of the paper (preferred).
 
 ## Event Core
 
@@ -84,134 +98,164 @@ bongo_fnl <- bongo %>%
          day,
          decimalLatitude = latitude,
          decimalLongitude = longitude,
-         maximumDepthInMeters = sample_depth) %>%
-  mutate(minimumDepthInMeters = 0,
-         eventRemarks = ifelse(grepl("IYS2019-Kaganovsky-51-ND", bongo_fnl$eventID), "Bongo cancelled because of weather", ifelse(grepl("IYS2019-Kaganovsky-52-ND", bongo_fnl$eventID), "Bongo cancelled because of weather", NA))) %>%
+         maximumDepthInMeters = sample_depth,
+         sampleSizeValue,
+         samplingEffort,
+         sampleSizeUnit,
+         fieldNotes) %>%
+  mutate(minimumDepthInMeters = 0) %>%
   distinct(eventID, .keep_all = TRUE)
 
-bongo_cast <- subset(bongo_fnl, decimalLatitude != "ND")
-bongo_cast <- bongo_cast %>% 
-  mutate(footprintWKT = paste("POINT"," (", bongo_cast$decimalLongitude, " ", bongo_cast$decimalLatitude, ")"),
-         coordinateUncertaintyInMeters <- obistools::calculate_centroid(footprintWKT)[3])
-
-bongo_fail <- subset(bongo_fnl, decimalLatitude == "ND")
-bongo_fail$footprintWKT <- NA
-bongo_fail$coordinateUncertaintyInMeters <- NA
-
-bongo_fnl <- rbind(bongo_cast, bongo_fail) %>% 
-  mutate(geodeticDatum = "WGS84")
+bongo_fnl <- bongo_fnl %>% 
+  mutate(footprintWKT = paste("POINT"," (", bongo_fnl$decimalLongitude, " ", bongo_fnl$decimalLatitude, ")"),
+         coordinateUncertaintyInMeters <- obistools::calculate_centroid(footprintWKT)[3]) %>%
+  mutate(geodeticDatum = "WGS84",
+         language = "en",
+         modified = lubridate::today(),
+         license = "https://creativecommons.org/licenses/by/4.0/legalcode",
+         informationWithheld = "Contact data provider for information on abundance, sizes and biomass.",
+         institutionID = "https://edmo.seadatanet.org/report/2220",
+         institutionCode = "UBC-EOAS")
 
 # Remove NAs from the Event Core:
 bongo_fnl[is.na(bongo_fnl)] <- ""
 bongo_fnl <- as.data.frame(bongo_fnl)
 
 # Make sure the folder path exists already (e.g. ./Bongo/tidy_data)
-write_csv(bongo_fnl, here("OBIS_data", "bongo2019_event.csv"))
+write_csv(bongo_fnl, here("standardized_data", "bongo2019_2020_event.csv"))
 ```
-
-***
 
 ## Occurrence extension
 
-Two Occurrence tables will be created, as we're dealing with two separate datasets created from the same data collection event. One dataset includes dry weight and length measurements, along with sex and lifestage, whereas the other dataset contains species-specific (estimated or expanded) abundance at each sampling station, with sex and lifestage. From my understanding, samples in Net 1 from the bongo sampling instrument were typically fixed as a whole for community and abundance analysis. Zooplankton in Net 2 was used predominantly for isotope or fatty acid analysis. 
-
 __Comment added on April 4, 2023__: Received updated information from Joanne Breckenridge (UBC), to be included in the occurrence table.
 
-Let's first create an Occurrence extension for the (estimated or expanded) abundance data. The abundance data file also includes data collected in 2020 so we do need to filter for the samples collected in 2019 first. 
+Create an Occurrence extension for the taxonomic abundance data. 
 
 ``` {r bongo2019 abundance occ, eval = FALSE, warning = FALSE}
-bongo2019_abun <- read_excel(here("original_data", "IYS zooplankton taxonomy data 20210115 (1).xlsx"), 
-                  sheet = "All data") 
+bongo_abun <- read_csv(here("original_data", "IYSZoopAbund2019_2020Long.csv")) %>%
+  janitor::clean_names() %>%
+  select(-x1)
 
 # Add additional data from Joanne Breckenridge. Create dummy columns for latitude and longitude to be populated later:
 bongo_kag <- read_csv(here("original_data", "IYSKaganoSpecRemovedfromNet.csv")) %>%
-  janitor::clean_names() %>%
-  select(-c(year, yearletter, station_year))
+  janitor::clean_names()
 
-bongo2019_abun <- rbind(bongo2019_abun, bongo_kag)
+bongo_abun <- rbind(bongo_abun, bongo_kag)
 
-bongo2019_abun$date <- as.Date(bongo2019_abun$date)
-bongo2019_abun <- subset(bongo2019_abun, date >= "2019-02-19" & date <= "2019-03-15") %>%
-  mutate(net = 1,
-         eventID = paste("IYS2019", "Kaganovsky", station, net, sep = "-"))
+bongo_abun$date <- as.Date(bongo_abun$date, format = "%m/%d/%Y")
+bongo_abun$net <- 1
+bongo2019_abun <- subset(bongo_abun, date >= "2019-02-19" & date <= "2019-03-15") %>%
+  mutate(eventID = paste("IYS2019", "Kaganovsky", station, "Bongo", net, sep = "-"))
+bongo2020_abun <- subset(bongo_abun, date >= "2020-03-12" & date <= "2020-04-04") %>%
+  mutate(eventID = paste("IYS2020", "Legacy", station, "Bongo", net, sep = "-"))
+
+bongo_abun <- rbind(bongo2019_abun, bongo2020_abun)
 
 ```
 
 Manual inspection of this dataframe shows that there are still a few species (id) that will need slight changes in their spelling, as the worrms package does not recognize 'sp.' etc. Additionally, some ids contain a lifestage (larvae, egg, trochophores, etc). These are also mentioned in a column 'lifestage', so they are removed from the species id. These manual changes are listed below and are not made in the raw data file. This way the original species description is still provided. 
 
-``` {r, eval = FALSE}
-bongo2019_abun$identificationQualifier <- ifelse(grepl("sp.", bongo2019_abun$id), "sp. indet.", NA)
-bongo2019_abun$id <- gsub("\\b sp.\\b", "", bongo2019_abun$id)
-bongo2019_abun$id <- gsub("egg|nauplius|larva|juvenile|calyptopsis|furcillia", "", bongo2019_abun$id)
+We ensure we keep the original recording of the observation in the column _verbatimIdentification_.
 
-bongo2019_abun <- bongo2019_abun %>% rename(scientificname = id)
-worms_id <- worrms::wm_records_names(unique(bongo2019_abun$scientificname), marine_only = FALSE) %>% dplyr::bind_rows()
+``` {r, eval = FALSE}
+bongo_abun$verbatimIdentification = bongo_abun$id
+bongo_abun$identificationQualifier <- ifelse(grepl("sp.|spp.", bongo_abun$id), "sp. indet.", NA)
+bongo_abun$id <- gsub("\\b sp.\\b|\\b spp.\\b", "", bongo_abun$id)
+bongo_abun$id <- gsub("egg|nauplius|larva|juvenile|calyptopsis|furcillia", "", bongo_abun$id)
+
+# In the sex column there is 'juvenile' which should be in lifestage:
+bongo_abun$stage <- ifelse(bongo_abun$sex == "juvenile" & is.na(bongo_abun$stage), "juvenile", bongo_abun$stage)
+bongo_abun$sex <- gsub("juvenile", NA, bongo_abun$sex)
+
+# Rename id column to verbatimIdentification, and duplicate it to a 'scientificname' column:
+bongo_abun <- bongo_abun %>%
+  mutate(scientificname = id) %>%
+  mutate(scientificname = stringr::str_trim(scientificname, "right"))
+
+unique_spp <- unique(bongo_abun$scientificname)
+worms_id <- worrms::wm_records_names(unique(bongo_abun$scientificname), marine_only = FALSE) %>% dplyr::bind_rows()
 
 # Find out which species are not found in the WoRMS database:
-no_worms_id <- left_join(bongo2019_abun, worms_id, by = "scientificname") %>% filter(is.na(AphiaID)) %>% distinct(scientificname)
+no_worms_id <- left_join(bongo_abun, worms_id, by = "scientificname") %>% filter(is.na(AphiaID)) %>% distinct(scientificname)
 ```
 
-These species will need to have their names changed in the original dataframe (bongo2019_abun) which we'll do below. I write this out so it is clear which names or species observations have been altered, so this can be verified. Verification has been done with the data provider.  
+These species will need to have their names changed in the original dataframe (bongo_abun) which we'll do below. I write this out so it is clear which names or species observations have been altered, so this can be verified. Verification has been done with the data provider.  
 
 ``` {r, eval = FALSE}
-bongo2019_abun$scientificname <- gsub("Chaetognath|Chaetognath ", "Chaetognatha", bongo2019_abun$scientificname)
-bongo2019_abun$scientificname <- gsub("Disconchoecia elegans", "Discoconchoecia elegans", bongo2019_abun$scientificname)
-bongo2019_abun$scientificname <- gsub("Euphausiid |Euphausiid", "Euphausiidae", bongo2019_abun$scientificname)
-bongo2019_abun$scientificname <- gsub("Doliolid", "Doliolidae", bongo2019_abun$scientificname)
-bongo2019_abun$scientificname <- gsub("Oikopleura labradoriensis", "Oikopleura (Vexillaria) labradoriensis",
-                                      bongo2019_abun$scientificname)
-bongo2019_abun$scientificname <- gsub("Copepod ", "Copepoda", bongo2019_abun$scientificname)
-bongo2019_abun$scientificname <- gsub("Mesocalanus tenucornis", "Mesocalanus tenuicornis", bongo2019_abun$scientificname)
-bongo2019_abun$scientificname <- gsub("Oikopleura dioica", "Oikopleura (Vexillaria) dioica",
-                                      bongo2019_abun$scientificname)
-bongo2019_abun$scientificname <- gsub("Ophuroidea", "Ophiuroidea", bongo2019_abun$scientificname)
-bongo2019_abun$scientificname <- gsub("Scaphocalanus brevicaudatus", "Scaphocalanus brevicornis",
-                                      bongo2019_abun$scientificname)
-bongo2019_abun$scientificname <- gsub("Siphonophore", "Siphonophorae", bongo2019_abun$scientificname)
-bongo2019_abun$scientificname <- gsub("Polychaete", "Polychaeta", bongo2019_abun$scientificname)
-bongo2019_abun$scientificname <- gsub("Trochophore", "Animalia", bongo2019_abun$scientificname) 
-# Unfortunately Trochophore (lifestage) can not be narrowed down further than 'Animalia' [as per Natalie M.]
-bongo2019_abun$scientificname <- gsub("Fish |Fish", "Pisces", bongo2019_abun$scientificname)
-bongo2019_abun$scientificname <- gsub("Muggiae atlantica", "Muggiaea atlantica", bongo2019_abun$scientificname)
-bongo2019_abun$scientificname <- gsub("Gastropod", "Gastropoda", bongo2019_abun$scientificname)
-bongo2019_abun$scientificname <- gsub("Triconia ivlevi", "Triconia borealis", bongo2019_abun$scientificname)
-bongo2019_abun$scientificname <- gsub("Squid", "Teuthida", bongo2019_abun$scientificname)
-bongo2019_abun$scientificname <- gsub("Epicarid isopod", "Epicaridea", bongo2019_abun$scientificname)
-bongo2019_abun$scientificname <- gsub("Tessarabrachion occulatum", "Tessarabrachion oculatum",
-                                      bongo2019_abun$scientificname)
-bongo2019_abun$scientificname <- gsub("Nematocelis difficilis", "Nematoscelis difficilis", bongo2019_abun$scientificname)
-bongo2019_abun$scientificname <- gsub("Tuscaretta globulosa", "Tuscaretta globosa", bongo2019_abun$scientificname)
-bongo2019_abun$scientificname <- gsub("Bivalve", "Bivalvia", bongo2019_abun$scientificname)
-bongo2019_abun$scientificname <- gsub("Symbolophorous californiensis", "Symbolophorus californiensis",
-                                      bongo2019_abun$scientificname)
-bongo2019_abun$scientificname <- gsub("Euphausia pacficia", "Euphausia pacifica", bongo2019_abun$scientificname)
-bongo2019_abun$scientificname <- gsub("Thysanoessa lonipes", "Thysanoessa longipes", bongo2019_abun$scientificname)
-bongo2019_abun$scientificname <- gsub("Primno pacifica", "Primno abyssalis", bongo2019_abun$scientificname)
-bongo2019_abun$scientificname <- gsub("Aglama elegans", "Agalma elegans", bongo2019_abun$scientificname)
-bongo2019_abun$scientificname <- gsub("Ctenophore", "Ctenophora", bongo2019_abun$scientificname)
+bongo_abun$scientificname <- gsub("Chaetognath", "Chaetognatha", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Disconchoecia elegans", "Discoconchoecia elegans", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Euphausiid", "Euphausiidae", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Doliolid", "Doliolidae", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Oikopleura labradoriensis", "Oikopleura (Vexillaria) labradoriensis", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Copepod", "Copepoda", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Mesocalanus tenucornis", "Mesocalanus tenuicornis", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Oikopleura dioica", "Oikopleura (Vexillaria) dioica", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Ophuroidea", "Ophiuroidea", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Scaphocalanus brevicaudatus", "Scaphocalanus brevicornis", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Siphonophore", "Siphonophorae", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Polychaete", "Polychaeta", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Trochophore", "Animalia", bongo_abun$scientificname) 
+bongo_abun$scientificname <- gsub("Fish", "Pisces", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Muggiae atlantica", "Muggiaea atlantica", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Gastropod", "Gastropoda", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Triconia ivlevi", "Triconia borealis", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Squid", "Teuthida", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Epicarid isopod", "Epicaridea", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Tessarabrachion occulatum", "Tessarabrachion oculatum", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Euphausiid", "Euphausiidae", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Nematocelis difficilis", "Nematoscelis difficilis", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Tuscaretta globulosa", "Tuscaretta globosa", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Bivalve", "Bivalvia", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Symbolophorous californiensis", "Symbolophorus californiensis", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Primno pacifica", "Primno abyssalis", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Aglama elegans", "Agalma elegans", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Ctenophore", "Ctenophora", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Euchirella curticaudata", "Euchirella curticauda", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Rhynchonereella angellini", "Rhynchonereella angelini", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Nematode", "Nematoda", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Calanoid A", "Calanoida", bongo_abun$scientificname)
 # Because I changed Chaetognath earlier, it changed the code below which I had to alter. (rewrite this). 
-bongo2019_abun$scientificname <- gsub("Chaetognathasp. (no heads)", "Chaetognatha", bongo2019_abun$scientificname, fixed = TRUE)
+bongo_abun$scientificname <- gsub("Chaetognatha sp. (no heads)", "Chaetognatha", bongo_abun$scientificname, fixed = TRUE)
+bongo_abun$scientificname <- gsub("\\bNeocalanus/Calanus\\b", "Calanidae", bongo_abun$scientificname)
+```
+
+Unsure why, but the following will have to be run in a separate chunk:
+
+```{r}
+# Final change, change this if possible:
+#TODO: Fix this if possible
+bongo_abun$scientificname <- gsub("Euphausiidaeae", "Euphausiidae", bongo_abun$scientificname)
 
 # As we have now changed all the names in the original dataframe (bongo2019_abun) to fit the entries in the WoRMS database registry, we can use worrms::wm_records_names() again to find all the taxonomic information. 
-bongo2019_worms_id <- worrms::wm_records_names(unique(bongo2019_abun$scientificname), marine_only = FALSE) %>%
+bongo_worms_id <- worrms::wm_records_names(unique(bongo_abun$scientificname), marine_only = FALSE) %>%
   dplyr::bind_rows()
 
-# After manual inspection, there are some AphiaIDs that need to be removed as they are either duplicates, or alternate representations. 
-bongo2019_worms_id <- filter(bongo2019_worms_id, !(AphiaID %in% c("956054", "956065", "163921",
-                                                                  "719191", "1391513", "534090")))
+# Find the entries with multiple AphiaIDs:
+dup_entries <- bongo_worms_id %>%
+  group_by(scientificname) %>%
+  filter(n() > 1)
 
-# Find out which species are not found in the WoRMS database:
-no_worms_id_2 <- left_join(bongo2019_abun, bongo2019_worms_id, by = "scientificname") %>% filter(is.na(AphiaID)) %>% distinct(scientificname)
+# After manual inspection, there are some AphiaIDs that need to be removed as they are either duplicates, or alternate representations. 
+bongo_worms_id <- filter(bongo_worms_id, !(AphiaID %in% c("534090", "426434", "719191", "1558566", "603038", "956054", "956065", "163921", 
+                                                          "1434994", "106331", "605966", "138835")))
+
+# Make sure that now all the species have a - single - associated AphiaID:
+dup_entries <- bongo_worms_id %>%
+  group_by(scientificname) %>%
+  filter(n() > 1)
+
+no_worms_id_2 <- left_join(bongo_abun, bongo_worms_id, by = "scientificname") %>% filter(is.na(AphiaID)) %>% distinct(scientificname)
+
 ```
 
-Merge this dataset back into original dataframe. First remove the column "genus" from bongo2019_abun, because otherwise this one is copied. individualCount, ind_total, abund_m3_flow_est and abund_m3_depth_est are included in the original bongo2019_abun dataframe, because this will be the data frame that I work off of for the eMOF. 
+Merge this dataset back into original dataframe. First remove the column "genus" from bongo_abun, because otherwise this one is copied. individualCount, ind_total, abund_m3_flow_est and abund_m3_depth_est are included in the original dataframe, because this will be the data frame that I work off of for the eMOF once this data can be made publicly available. 
 
 ``` {r, eval = FALSE}
-bongo2019_abun <- bongo2019_abun %>% select(-genus)
-bongo2019_abun <- left_join(bongo2019_abun, bongo2019_worms_id, by = "scientificname")
-bongo2019_abun <- bongo2019_abun %>%
+bongo_abun <- bongo_abun %>% select(-genus)
+bongo_abun <- left_join(bongo_abun, bongo_worms_id, by = "scientificname")
+bongo_abun <- bongo_abun %>%
   select(eventID,
-         specificEpithet = species,
+         verbatimIdentification,
          scientificName = scientificname,
          scientificNameID = lsid,
          scientificAuthorityName = authority,
@@ -225,89 +269,93 @@ bongo2019_abun <- bongo2019_abun %>%
          taxonomicStatus = status,
          identificationQualifier,
          kingdom, phylum, class, order, family, genus) %>%
-  mutate(occurrenceID = paste(eventID, "zoop_occ", sep = "-"),
-         occurrenceID = paste(occurrenceID, row_number(), sep = "-"),
+  group_by(eventID) %>%
+  mutate(specificEpithet = stringr::word(scientificName, 2),
+         occurrenceID = paste(eventID, row_number(), sep = "-"),
          occurrenceStatus = "present",
-         basisOfRecord = "PreservedSpecimen")
+         basisOfRecord = "PreservedSpecimen") %>%
+  ungroup()
 
-bongo2019_taxa_abundance <- bongo2019_abun %>% select(-c(individualCount, ind_total, abund_m3_flow_est, abund_m3_depth_est))
-
-preservation <- bongo %>% select(eventID, preservation)
-bongo2019_occ <- left_join(bongo2019_taxa_abundance, preservation, by = "eventID")
+bongo_occ <- bongo_abun %>% select(-c(individualCount, ind_total, abund_m3_flow_est, abund_m3_depth_est))
 
 # Check for duplicated occurrenceIDs:
-bongo2019_occ %>% janitor::get_dupes(occurrenceID) # Should be none!
+bongo_occ %>% janitor::get_dupes(occurrenceID) # Should be none!
+
+# Remove NAs from the Event Core:
+bongo_occ[is.na(bongo_occ)] <- ""
+bongo_occ <- as.data.frame(bongo_occ)
 
 # Make sure the folder path exists already (e.g. ./Bongo/tidy_data)
-write_csv(bongo2019_occ, here("OBIS_data", "bongo2019_occ.csv"))
-
-# Make sure the folder path exists already (e.g. ./Bongo/tidy_data)
-#write_csv(bongo2019_taxa_abundance, here("Bongo", "tidy_data", "bongo2019_taxa_occ.csv"))
+write_csv(bongo_occ, here("standardized_data", "bongo2019_2020_occ.csv"))
 ```
 
-- [ ] To do: confirm that all unique species from the original dataset (IYS Zooplankton Taxonomy Abundance Data.xlsx - filtered for 2019) are represented in the bongo2019_taxa_abundance dataframe. 
+***
+
+THE NEXT SECTIONS HAVE NOT BEEN USED IN THE CREATION OF THE EVENT CORE AND OCCURRENCE EXTENSION. ONLY ONCE DATA ON INDIVIDUALCOUNT, ABUNDANCE, FATTY ACID AND STABLE ISOTOPES CAN BE MADE PUBLICLY AVAILABLE WILL WE RUN THE REMAINDER OF THE CODE TO INCLUDE THAT INFORMATION IN THE STANDARDIZED DATA THAT WILL BE PUBLISHED TO OBIS.
+
+
+***
+
 
 So now we've created the first Occurrence table coming from the Bongo net 1 zooplankton data, on community analysis / abundance estimates. These `occurrenceID`s will have associated measurements linked to it as well, which should include `sex`, `lifeStage`, the observed and expanded individual count, and the various ways in which abundance or total number is estimated. i.e. `ind_total` = total number of individuals estimated in the entire sample, `abund_m3_flow_est` = total abundance estimated from the flow meter, and `abund_m3_depth_est` = total abundance of individuals estimated using the depth-estimated estimate. The different methods of abundance measurement (from flow meter or from depth estimate) will get included as _measurementMethod_. 
-
-*** 
 
 The second Occurrence table we create is on the data collected for the dry weight isotope and fatty acid analysis. This data is found in a different data set (`bongo`). Some larger individuals from Net 1 were used both in the abundance study as well as fatty acid/isotope study. These will get treated as a new, unique occurrence, and will therefore also have their own unique `occurrenceID`. 
 
 An `occurrenceID` and `occurrenceStatus` will only be provided to data entries where species have been assigned a WoRM URN. **Important:** Species = `Jellyfish, radiolarian, chaetognath`, will be filtered out from the data, because it is not possible to group this record under a taxonomic level (Jellyfish and chaetognatha are kingdom = Animalia, whereas radiozoa are kingdom = Protozoa). Other species that haven't been identified to a specific species, or that are aggregations of multiple species (i.e. `Chaetognath & Ctenophore` and `Jelly mass`) are changed to "Animalia", as per discussion with the data provider (Natalie M.).
 
 ``` {r bongo_occ_pre_wrangle, eval = FALSE}
-unique(bongo$species)
-
-bongo2019_taxa <- bongo %>% filter(!(species %in% c("Jellyfish, radiolarian, chaetognath")))
-bongo2019_taxa <- bongo2019_taxa %>%
-  mutate(occurrenceRemarks = ifelse(bongo2019_taxa$species %in% c("Chaetognath & Ctenophore", "Jelly mass",
-                                                          "Gelatinous", "Ctenophore / jellyfish"), 
-                                    bongo2019_taxa$species, NA))
+# unique(bongo$species)
+# 
+# bongo2019_taxa <- bongo %>% filter(!(species %in% c("Jellyfish, radiolarian, chaetognath")))
+# bongo2019_taxa <- bongo2019_taxa %>%
+#   mutate(occurrenceRemarks = ifelse(bongo2019_taxa$species %in% c("Chaetognath & Ctenophore", "Jelly mass",
+#                                                           "Gelatinous", "Ctenophore / jellyfish"), 
+#                                     bongo2019_taxa$species, NA))
 ```
 
 We have to manually change records where length is reported in a range (e.g. 16-20mm) or in an approximation (>4mm). Additionally, we add `occurrenceRemarks` to the records where number is reported as ~3 or >3, to indicate the uncertainty in count. 
 
 ```{r, eval = FALSE}
 # Some species reflect a lifestage rather than a species, and for these records the lifestage is recorded in a separate column:
-bongo2019_taxa <- bongo2019_taxa %>%
-  mutate(stage = ifelse(grepl("Crab zoea", bongo2019_taxa$species), "Crab zoea", stage),
-         stage = ifelse(grepl("larva", bongo2019_taxa$species), "Larvae", stage),
-         stage = ifelse(grepl("Hydromedusae", bongo2019_taxa$species), "Hydromedusae", stage),
-         stage = ifelse(grepl("veliger", bongo2019_taxa$species), "Veliger", stage))
-
-# Additionally, all mentionings of 'sp.' need to be removed as these can't be found through the worrms package. However, these will have to be added to identificationQualifier:
-bongo2019_taxa$identificationQualifier <- ifelse(grepl("sp.", bongo2019_taxa$species), "sp. indet.", NA)
-bongo2019_taxa$species <- gsub("\\b sp.\\b", "", bongo2019_taxa$species)
-bongo2019_taxa$species <- gsub("[(]", "", bongo2019_taxa$species)
-bongo2019_taxa$species <- gsub("[)]", "", bongo2019_taxa$species)
-unique_bongo2019_taxa <- unique(bongo2019_taxa$species)
-
-# The other species that haven't been found through the worrms package are slightly misspelled or have been recorded with their common name, such as 'Squat lobster'. Where common names are provided, we record these under 'vernacularName'. Other names are changed - and confirmed with data provider. They are written out below.
-bongo2019_taxa$vernacularName <- ifelse(grepl("Squat lobster", bongo2019_taxa$species), "Squat lobster", NA)
-
-bongo2019_taxa$species <- gsub("Size fraction|Chaetognath & Ctenophore|Jelly mass|Gelatinous|Ctenophore / jellyfish",
-                               "Animalia", bongo2019_taxa$species)
-bongo2019_taxa$species <- gsub("Copepod", "Copepoda", bongo2019_taxa$species)
-bongo2019_taxa$species <- gsub("Squat lobster", "Munida quadrispina", bongo2019_taxa$species)
-bongo2019_taxa$species <- gsub("Siphonophore|siphonophore", "Siphonophorae", bongo2019_taxa$species)
-bongo2019_taxa$species <- gsub("Chaetognath Sagitta", "Sagittoidea", bongo2019_taxa$species)
-bongo2019_taxa$species <- gsub("Euphausiid", "Euphausiidae", bongo2019_taxa$species)
-bongo2019_taxa$species <- gsub("Siphonophorae Lensia type", "Lensia", bongo2019_taxa$species)
-bongo2019_taxa$species <- gsub("Radiolarians", "Radiozoa", bongo2019_taxa$species)
-bongo2019_taxa$species <- gsub("Crab zoea", "Decapoda", bongo2019_taxa$species)
-bongo2019_taxa$species <- gsub("Myctophid larva", "Myctophidae", bongo2019_taxa$species)
-bongo2019_taxa$species <- gsub("Primno pacifica", "Primnoa pacifica", bongo2019_taxa$species)
-bongo2019_taxa$species <- gsub("Japatella diaphana", "Japetella diaphana", bongo2019_taxa$species)
-bongo2019_taxa$species <- gsub("Clio pyrimidata", "Clio pyramidata", bongo2019_taxa$species)
-bongo2019_taxa$species <- gsub("Gastropod veliger", "Gastropoda", bongo2019_taxa$species)
-bongo2019_taxa$species <- gsub("Hydromedusae", "Hydrozoa", bongo2019_taxa$species)
-bongo2019_taxa$species <- gsub("Sergestes similis", "Eusergestes similis", bongo2019_taxa$species)
-
-bongo2019 <- worrms::wm_records_names(unique(bongo2019_taxa$species)) %>% bind_rows() %>% 
-  rename(species = scientificname)
-
-# Next, connect this taxonomy hierarchical information to the original dataset (bongo2019_taxa)
-bongo2019_taxa_occ <- left_join(bongo2019_taxa, bongo2019, by = "species")
+# bongo2019_taxa <- bongo2019_taxa %>%
+#   mutate(stage = ifelse(grepl("Crab zoea", bongo2019_taxa$species), "Crab zoea", stage),
+#          stage = ifelse(grepl("larva", bongo2019_taxa$species), "Larvae", stage),
+#          stage = ifelse(grepl("Hydromedusae", bongo2019_taxa$species), "Hydromedusae", stage),
+#          stage = ifelse(grepl("veliger", bongo2019_taxa$species), "Veliger", stage))
+# 
+# # Additionally, all mentionings of 'sp.' need to be removed as these can't be found through the worrms package. However, these will have to be added to identificationQualifier:
+# bongo2019_taxa$identificationQualifier <- ifelse(grepl("sp.", bongo2019_taxa$species), "sp. indet.", NA)
+# bongo2019_taxa$species <- gsub("\\b sp.\\b", "", bongo2019_taxa$species)
+# bongo2019_taxa$species <- gsub("[(]", "", bongo2019_taxa$species)
+# bongo2019_taxa$species <- gsub("[)]", "", bongo2019_taxa$species)
+# unique_bongo2019_taxa <- unique(bongo2019_taxa$species)
+# 
+# # The other species that haven't been found through the worrms package are slightly misspelled or have been recorded with their common name, such as 'Squat lobster'. Where common names are provided, we record these under 'vernacularName'. Other names are changed - and confirmed with data provider. They are written out below.
+# bongo2019_taxa$vernacularName <- ifelse(grepl("Squat lobster", bongo2019_taxa$species), "Squat lobster", NA)
+# 
+# bongo2019_taxa$species <- gsub("Size fraction|Chaetognath & Ctenophore|Jelly mass|Gelatinous|Ctenophore / jellyfish",
+#                                "Animalia", bongo2019_taxa$species)
+# bongo2019_taxa$species <- gsub("Copepod", "Copepoda", bongo2019_taxa$species)
+# bongo2019_taxa$species <- gsub("Squat lobster", "Munida quadrispina", bongo2019_taxa$species)
+# bongo2019_taxa$species <- gsub("Siphonophore|siphonophore", "Siphonophorae", bongo2019_taxa$species)
+# bongo2019_taxa$species <- gsub("Chaetognath Sagitta", "Sagittoidea", bongo2019_taxa$species)
+# bongo2019_taxa$species <- gsub("Euphausiid", "Euphausiidae", bongo2019_taxa$species)
+# bongo2019_taxa$species <- gsub("Siphonophorae Lensia type", "Lensia", bongo2019_taxa$species)
+# bongo2019_taxa$species <- gsub("Radiolarians", "Radiozoa", bongo2019_taxa$species)
+# bongo2019_taxa$species <- gsub("Crab zoea", "Decapoda", bongo2019_taxa$species)
+# bongo2019_taxa$species <- gsub("Myctophid larva", "Myctophidae", bongo2019_taxa$species)
+# bongo2019_taxa$species <- gsub("Primno pacifica", "Primnoa pacifica", bongo2019_taxa$species)
+# bongo2019_taxa$species <- gsub("Japatella diaphana", "Japetella diaphana", bongo2019_taxa$species)
+# bongo2019_taxa$species <- gsub("Clio pyrimidata", "Clio pyramidata", bongo2019_taxa$species)
+# bongo2019_taxa$species <- gsub("Gastropod veliger", "Gastropoda", bongo2019_taxa$species)
+# bongo2019_taxa$species <- gsub("Hydromedusae", "Hydrozoa", bongo2019_taxa$species)
+# bongo2019_taxa$species <- gsub("Sergestes similis", "Eusergestes similis", bongo2019_taxa$species)
+# 
+# bongo2019 <- worrms::wm_records_names(unique(bongo2019_taxa$species)) %>% bind_rows() %>% 
+#   rename(species = scientificname)
+# 
+# # Next, connect this taxonomy hierarchical information to the original dataset (bongo2019_taxa)
+# bongo2019_taxa_occ <- left_join(bongo2019_taxa, bongo2019, by = "species")
 ```
 
 Upon inspection of the species filtered out of the bongo dataset, some sample_ids have notes in which species are specified, see e.g. sample_id Z80, Z15, SS102 etc. Where the notes specify the species and individual measurements (e.g. SS81) I have dealt with these samples in a later stage. However, the other sample_ids I have left as is -- notes are added to the eMoF table in a column labeled `measurementRemarks`. 
@@ -315,10 +363,10 @@ Upon inspection of the species filtered out of the bongo dataset, some sample_id
 When examining the bongo2019_taxa_occ dataset, numerous data entries have the `sample_id` 'Petri dish' associated to them, with the only distinguishable feature being a difference in length measurement. In our current set up, all Petri dish sample_ids belonging to the same station have the same `eventID` (e.g. GoA2019_Stn10:cast1:bongo:Net1:Petri dish), although they are different data entries with different associated measurements. Therefore we need attach a unique sampleID to them and then merge them back to the dataframe. 
 
 ``` {r petri_dish, eval = FALSE}
-bongo_occ_petri <- bongo2019_taxa_occ %>% filter(sample_id == "Petri dish") %>%
-  mutate(sample_id = paste(sample_id, row_number(), sep = "_"))
-bongo2019_taxa_occ_temp <- bongo2019_taxa_occ %>% filter(!sample_id == "Petri dish")
-bongo2019_taxa_occ <- rbind(bongo2019_taxa_occ_temp, bongo_occ_petri)
+# bongo_occ_petri <- bongo2019_taxa_occ %>% filter(sample_id == "Petri dish") %>%
+#   mutate(sample_id = paste(sample_id, row_number(), sep = "_"))
+# bongo2019_taxa_occ_temp <- bongo2019_taxa_occ %>% filter(!sample_id == "Petri dish")
+# bongo2019_taxa_occ <- rbind(bongo2019_taxa_occ_temp, bongo_occ_petri)
 ```
 
 There are three sample_ids (SS81, SS133 and Z15) for which the species are mentioned in the _notes_ column. Samples SS81 and SS133 _also_ have associated length measurements. For these three sample_ids we can add an `occurrenceID` and `occurrenceStatus`. All sample_ids require special attention: For sampleID SS81 the number = 7, but the notes distinguish 8 unique measurements. Additionally, sample_id SS133 requires special attention because although number = 1, in the notes it says that two jellies were observed (length range: 10 - 15mm) and 3 sagitta spp. were observed, with individual lengths measured. Finally, for sample_id Z15, the number reported is 1, but in the notes different species have been reported with a total number of n=10. 
@@ -330,91 +378,91 @@ Before creating occurrence tables that will eventually be merged into an Occurre
 Finally, the dataframe of these three sample_ids will be joined with the `bongo2019_taxa_occ` dataframe. 
 
 ``` {r SS81 and SS133, eval = FALSE}
-bongo_pre_wrangle <- bongo %>% filter(sample_id %in% c("SS81", "SS133", "Z15"))
-
-bongo_pre_wrangle$number[1] <- 4
-bongo_pre_wrangle$number[2] <- 8
-bongo_pre_wrangle$number[3] <- 4
-
-bongo_pre_wrangle_dup <- data.frame(bongo_pre_wrangle[rep(seq_len(dim(bongo_pre_wrangle)[1]),
-                                  bongo_pre_wrangle$number), , drop = FALSE], row.names = NULL) %>%
-  mutate(weight_mg = NA)
-
-# Merge it back with the original dataframe: 
-bongo_pre_wrangle_fnl <- rbind(bongo_pre_wrangle, bongo_pre_wrangle_dup)
-bongo_pre_wrangle_fnl$number <- as.numeric(bongo_pre_wrangle_fnl$number)
-bongo_pre_wrangle_fnl <- bongo_pre_wrangle_fnl[order(bongo_pre_wrangle_fnl$number, decreasing = TRUE), ]
-bongo_pre_wrangle_fnl <- bongo_pre_wrangle_fnl[order(as.character(bongo_pre_wrangle_fnl$sample_id)), ]
-bongo_pre_wrangle_fnl$sample_id <- sub('[.]', '_', make.names(bongo_pre_wrangle_fnl$sample_id, unique=TRUE))
-
-# Fill in the unique measurements associated to each data entry. 
-bongo_pre_wrangle_fnl <- bongo_pre_wrangle_fnl %>%
-  mutate(species = case_when(
-    sample_id == "SS133" ~ "Animalia",
-    sample_id == "SS133_1" ~ "Sagitta",
-    sample_id == "SS133_2" ~ "Sagitta",
-    sample_id == "SS133_3" ~ "Sagitta",
-    sample_id == "SS133_4" ~ "jellies",
-    sample_id == "SS81_1" ~ "Sagitta",
-    sample_id == "SS81" ~ "Animalia",
-    sample_id == "SS81_2" ~ "E pacifica",
-    sample_id == "SS81_3" ~ "E pacifica",
-    sample_id == "SS81_4" ~ "E pacifica",
-    sample_id == "SS81_5" ~ "E pacifica", 
-    sample_id == "SS81_6" ~ "E pacifica",
-    sample_id == "SS81_7" ~ "T spinifera",
-    sample_id == "SS81_8" ~ "T spinifera",
-    sample_id == "Z15" ~ "Animalia",
-    sample_id == "Z15_1" ~ "Aequoria",
-    sample_id == "Z15_2" ~ "Tspin",
-    sample_id == "Z15_3" ~ "salps",
-    sample_id == "Z15_4" ~ "chaetognaths"))
-bongo_pre_wrangle_fnl <- bongo_pre_wrangle_fnl %>% 
-  mutate(number = case_when(
-    sample_id == "SS133" ~ 5,
-    sample_id == "SS133_1" ~ 1,
-    sample_id == "SS133_2" ~ 1,
-    sample_id == "SS133_3" ~ 1,
-    sample_id == "SS133_4" ~ 2,
-    sample_id == "SS81" ~ 8,
-    sample_id == "SS81_1" ~ 1,
-    sample_id == "SS81_2" ~ 1,
-    sample_id == "SS81_3" ~ 1,
-    sample_id == "SS81_4" ~ 1,
-    sample_id == "SS81_5" ~ 1,
-    sample_id == "SS81_6" ~ 1,
-    sample_id == "SS81_7" ~ 1,
-    sample_id == "SS81_8" ~ 1,
-    sample_id == "Z15" ~ 10,
-    sample_id == "Z15_1" ~ 1,
-    sample_id == "Z15_2" ~ 1,
-    sample_id == "Z15_3" ~ 6,
-    sample_id == "Z15_4" ~ 2))
-bongo_pre_wrangle_fnl <- bongo_pre_wrangle_fnl %>%
-  mutate(length_mm = case_when(
-    sample_id == "SS133_1" ~ 44,
-    sample_id == "SS133_2" ~ 45,
-    sample_id == "SS133_3" ~ 48,
-    sample_id == "SS133_4" ~ 0, # Find a way to add range 10 - 15mm here.
-    sample_id == "SS81_1" ~ 29,
-    sample_id == "SS81_2" ~ 14,
-    sample_id == "SS81_3" ~ 15,
-    sample_id == "SS81_4" ~ 16,
-    sample_id == "SS81_5" ~ 17,
-    sample_id == "SS81_6" ~ 18,
-    sample_id == "SS81_7" ~ 12,
-    sample_id == "SS81_8" ~ 13,
-    sample_id == "Z15_1" ~ 30))  
-bongo_pre_wrangle_fnl$length_mm[5] <- "10-15mm" 
-# This line can be removed if length_mm for SS133_4 can easily be replaced. 
-
-bongo_pre_wrangle_fnl <- bongo_pre_wrangle_fnl %>%
-  mutate(notes = case_when(
-    sample_id == "SS133" ~ bongo_pre_wrangle_fnl$notes,
-    sample_id == "SS81" ~ bongo_pre_wrangle_fnl$notes,
-    sample_id == "Z15" ~ bongo_pre_wrangle_fnl$notes))
-
-bongo2019_taxa_occ <- plyr::rbind.fill(bongo2019_taxa_occ, bongo_pre_wrangle_fnl)
+# bongo_pre_wrangle <- bongo %>% filter(sample_id %in% c("SS81", "SS133", "Z15"))
+# 
+# bongo_pre_wrangle$number[1] <- 4
+# bongo_pre_wrangle$number[2] <- 8
+# bongo_pre_wrangle$number[3] <- 4
+# 
+# bongo_pre_wrangle_dup <- data.frame(bongo_pre_wrangle[rep(seq_len(dim(bongo_pre_wrangle)[1]),
+#                                   bongo_pre_wrangle$number), , drop = FALSE], row.names = NULL) %>%
+#   mutate(weight_mg = NA)
+# 
+# # Merge it back with the original dataframe:
+# bongo_pre_wrangle_fnl <- rbind(bongo_pre_wrangle, bongo_pre_wrangle_dup)
+# bongo_pre_wrangle_fnl$number <- as.numeric(bongo_pre_wrangle_fnl$number)
+# bongo_pre_wrangle_fnl <- bongo_pre_wrangle_fnl[order(bongo_pre_wrangle_fnl$number, decreasing = TRUE), ]
+# bongo_pre_wrangle_fnl <- bongo_pre_wrangle_fnl[order(as.character(bongo_pre_wrangle_fnl$sample_id)), ]
+# bongo_pre_wrangle_fnl$sample_id <- sub('[.]', '_', make.names(bongo_pre_wrangle_fnl$sample_id, unique=TRUE))
+# 
+# # Fill in the unique measurements associated to each data entry.
+# bongo_pre_wrangle_fnl <- bongo_pre_wrangle_fnl %>%
+#   mutate(species = case_when(
+#     sample_id == "SS133" ~ "Animalia",
+#     sample_id == "SS133_1" ~ "Sagitta",
+#     sample_id == "SS133_2" ~ "Sagitta",
+#     sample_id == "SS133_3" ~ "Sagitta",
+#     sample_id == "SS133_4" ~ "jellies",
+#     sample_id == "SS81_1" ~ "Sagitta",
+#     sample_id == "SS81" ~ "Animalia",
+#     sample_id == "SS81_2" ~ "E pacifica",
+#     sample_id == "SS81_3" ~ "E pacifica",
+#     sample_id == "SS81_4" ~ "E pacifica",
+#     sample_id == "SS81_5" ~ "E pacifica",
+#     sample_id == "SS81_6" ~ "E pacifica",
+#     sample_id == "SS81_7" ~ "T spinifera",
+#     sample_id == "SS81_8" ~ "T spinifera",
+#     sample_id == "Z15" ~ "Animalia",
+#     sample_id == "Z15_1" ~ "Aequoria",
+#     sample_id == "Z15_2" ~ "Tspin",
+#     sample_id == "Z15_3" ~ "salps",
+#     sample_id == "Z15_4" ~ "chaetognaths"))
+# bongo_pre_wrangle_fnl <- bongo_pre_wrangle_fnl %>%
+#   mutate(number = case_when(
+#     sample_id == "SS133" ~ 5,
+#     sample_id == "SS133_1" ~ 1,
+#     sample_id == "SS133_2" ~ 1,
+#     sample_id == "SS133_3" ~ 1,
+#     sample_id == "SS133_4" ~ 2,
+#     sample_id == "SS81" ~ 8,
+#     sample_id == "SS81_1" ~ 1,
+#     sample_id == "SS81_2" ~ 1,
+#     sample_id == "SS81_3" ~ 1,
+#     sample_id == "SS81_4" ~ 1,
+#     sample_id == "SS81_5" ~ 1,
+#     sample_id == "SS81_6" ~ 1,
+#     sample_id == "SS81_7" ~ 1,
+#     sample_id == "SS81_8" ~ 1,
+#     sample_id == "Z15" ~ 10,
+#     sample_id == "Z15_1" ~ 1,
+#     sample_id == "Z15_2" ~ 1,
+#     sample_id == "Z15_3" ~ 6,
+#     sample_id == "Z15_4" ~ 2))
+# bongo_pre_wrangle_fnl <- bongo_pre_wrangle_fnl %>%
+#   mutate(length_mm = case_when(
+#     sample_id == "SS133_1" ~ 44,
+#     sample_id == "SS133_2" ~ 45,
+#     sample_id == "SS133_3" ~ 48,
+#     sample_id == "SS133_4" ~ 0, # Find a way to add range 10 - 15mm here.
+#     sample_id == "SS81_1" ~ 29,
+#     sample_id == "SS81_2" ~ 14,
+#     sample_id == "SS81_3" ~ 15,
+#     sample_id == "SS81_4" ~ 16,
+#     sample_id == "SS81_5" ~ 17,
+#     sample_id == "SS81_6" ~ 18,
+#     sample_id == "SS81_7" ~ 12,
+#     sample_id == "SS81_8" ~ 13,
+#     sample_id == "Z15_1" ~ 30))
+# bongo_pre_wrangle_fnl$length_mm[5] <- "10-15mm"
+# # This line can be removed if length_mm for SS133_4 can easily be replaced.
+# 
+# bongo_pre_wrangle_fnl <- bongo_pre_wrangle_fnl %>%
+#   mutate(notes = case_when(
+#     sample_id == "SS133" ~ bongo_pre_wrangle_fnl$notes,
+#     sample_id == "SS81" ~ bongo_pre_wrangle_fnl$notes,
+#     sample_id == "Z15" ~ bongo_pre_wrangle_fnl$notes))
+# 
+# bongo2019_taxa_occ <- plyr::rbind.fill(bongo2019_taxa_occ, bongo_pre_wrangle_fnl)
 ```
 
 When examining the other data entries in the bongo2019_taxa_occ dataset, we can identify some "problems", especially in the columns `number` and `length_mm`. Some problems that we encountered are the following: 
@@ -447,14 +495,14 @@ These five occurrence tables will eventually be concatenated into a single Occur
 Let's first examine the data entries where the counts do not have a specific number associated to it. We do want to assign `occurrenceID` and `occurrenceStatus` columns to them. The number will have to be changed to numeric, and consequently we will have to include occurrenceRemarks to indicate that all these counts represent a minimum number observed. You will also notice that `length_mm` for one record is ">4mm", but we will deal with this in the eMOF section.  
 
 ``` {r bongo_occ1, eval = FALSE} 
-unique(bongo2019_taxa_occ$number)
-
-# This identifies that there are three entries where the number (or count) is not specified: ">1", ">3" and ">4".
-bongo2019_occ1 <- bongo2019_taxa_occ %>% filter(number == ">3" | number == ">4" | number == ">1") %>%
-  mutate(occurrenceID = " ",
-         occurrenceStatus = "present") %>%
-  rename(eventID = sample,
-         scientificName = species)
+# unique(bongo2019_taxa_occ$number)
+# 
+# # This identifies that there are three entries where the number (or count) is not specified: ">1", ">3" and ">4".
+# bongo2019_occ1 <- bongo2019_taxa_occ %>% filter(number == ">3" | number == ">4" | number == ">1") %>%
+#   mutate(occurrenceID = " ",
+#          occurrenceStatus = "present") %>%
+#   rename(eventID = sample,
+#          scientificName = species)
 ```
 
 Next, we create an occurrence table to address the second issue we are facing, that _some data entries have a number > 1, i.e., appear to be aggregated entries_. For some of these data entries, individual measurements or classifications are provided in the `notes` column. Therefore, we need to manually inspect the data entries where number > 1. If individual measurements are provided, we want split the data entry, and associate a unique `occurrenceID` and `occurrenceStatus`. We do _not_ want to create a unique `eventID` for each of these, because they were all found in the same sample!
@@ -462,58 +510,58 @@ Next, we create an occurrence table to address the second issue we are facing, t
 We create a separate table for the unique sample_id's that have number > 1 and where the number matches the individual length measurements in `length_mm`. Our intention here is to _add_ duplicate rows for each unique sample_id equal to the value under `number` associated to that data entry. We want to keep the original data entry row (the `eventID`) intact, as this data entry (usually) contains the weight measurement. In other words, if four individual length measurements are provided in the `length_mm` column, we want to make sure these all get a unique `occurrenceID`, associated to the same `eventID`. 
 
 ``` {r bongo_occ2_pre, eval = FALSE}
-bongo2019_taxa_occ$number <- as.numeric(bongo2019_taxa_occ$number)
-bongo2019_occ2 <- bongo2019_taxa_occ %>% filter(number > 1)
-
-# We filter for the sample_ids where number is more than 1, and unique length measurements are provided in the notes. 
-bongo2019_occ2_ind <- bongo2019_occ2 %>% filter(sample_id %in% c("SS12", "SS38", "SS42B", "22020", "22021",
-                                               "SS59", "SS58", "SS57", "SS55", "Z318", "SS68", "SS69",
-                                               "SS119", "SS126", "SS176", "SS185"))
+# bongo2019_taxa_occ$number <- as.numeric(bongo2019_taxa_occ$number)
+# bongo2019_occ2 <- bongo2019_taxa_occ %>% filter(number > 1)
+# 
+# # We filter for the sample_ids where number is more than 1, and unique length measurements are provided in the notes. 
+# bongo2019_occ2_ind <- bongo2019_occ2 %>% filter(sample_id %in% c("SS12", "SS38", "SS42B", "22020", "22021",
+#                                                "SS59", "SS58", "SS57", "SS55", "Z318", "SS68", "SS69",
+#                                                "SS119", "SS126", "SS176", "SS185"))
 ```
 
 When filtering for number > 1, we observe that there are data entries for Station 11 that are all for the same species, but unique length measurements are provided for three data entries, and the fourth includes a single length measurement. We therefore split three of those uniquely created `eventID`s as they have individual measurements associated to them. 
 
 ``` {r bongo_occ2_petri, eval = FALSE}
-bongo_petri <- bongo2019_occ2 %>% filter(sample_id %in% c("Petri dish_13","Petri dish_14", 
-                                                    "Petri dish_15"))
-# Merge this dataframe back in with the bongo_occ2_ind: 
-bongo_occ_new <- rbind(bongo2019_occ2_ind, bongo_petri)
+# bongo_petri <- bongo2019_occ2 %>% filter(sample_id %in% c("Petri dish_13","Petri dish_14", 
+#                                                     "Petri dish_15"))
+# # Merge this dataframe back in with the bongo_occ2_ind: 
+# bongo_occ_new <- rbind(bongo2019_occ2_ind, bongo_petri)
 ```
 
 All of the data entries in bongo_occ_new have a number of individual length measurements equal to the value reported in the `number` column. The next step is to create duplicate rows of these data entries, equal to the value in the `number` column. These duplicated rows will need to reflect the individual length measurements and also reflect that it now represents just a single measurement (i.e., number = 1). For all the split unique data entries in this dataframe, the weight_mg measurement will be NA. The weight_mg measurements for these data entries combined will still be reflected in the original data. In a later stage, this newly created dataframe will be merged with the original dataframe. 
 
 ``` {r bongo_occ2_wrangle, eval = FALSE}
-bongo2019_occ2 <- bongo_occ_new %>%
-  mutate(length_mm = strsplit(length_mm, ", |,")) %>% unnest(length_mm) %>%
-  group_by(`sample_id`) %>%
-  mutate(count = seq_len(length(`sample_id`)),
-         `sample_id` = paste(`sample_id`, count, sep = "-"),
-         number = 1) %>%
-  select(-count)
-bongo2019_occ2$length_mm <- gsub("mm", "", bongo2019_occ2$length_mm)
-bongo2019_occ2$weight_mg <- ifelse(bongo2019_occ2$weight_mg == "TBD", "TBD", NA)
-
-# Mix this into the bongo_occ_new dataframe, because in the original data entries occasionally the weight_mg is recorded
-bongo2019_occ2 <- rbind(bongo_occ_new, bongo2019_occ2) %>%
- # filter only for the entries where number = 1 
- filter(number == 1) %>%
-  mutate(occurrenceStatus = ifelse(number > 0, "present", "absent"),
-         occurrenceID = " ",
-         occurrenceRemarks = NA) %>%  
-  rename(eventID = sample,
-         scientificName = species)
+# bongo2019_occ2 <- bongo_occ_new %>%
+#   mutate(length_mm = strsplit(length_mm, ", |,")) %>% unnest(length_mm) %>%
+#   group_by(`sample_id`) %>%
+#   mutate(count = seq_len(length(`sample_id`)),
+#          `sample_id` = paste(`sample_id`, count, sep = "-"),
+#          number = 1) %>%
+#   select(-count)
+# bongo2019_occ2$length_mm <- gsub("mm", "", bongo2019_occ2$length_mm)
+# bongo2019_occ2$weight_mg <- ifelse(bongo2019_occ2$weight_mg == "TBD", "TBD", NA)
+# 
+# # Mix this into the bongo_occ_new dataframe, because in the original data entries occasionally the weight_mg is recorded
+# bongo2019_occ2 <- rbind(bongo_occ_new, bongo2019_occ2) %>%
+#  # filter only for the entries where number = 1 
+#  filter(number == 1) %>%
+#   mutate(occurrenceStatus = ifelse(number > 0, "present", "absent"),
+#          occurrenceID = " ",
+#          occurrenceRemarks = NA) %>%  
+#   rename(eventID = sample,
+#          scientificName = species)
 ```
 
 Third, we create an occurrence table for the third issue, _some data entries have a count > 1, and an associated range in the length measurement (i.e., 15 - 17mm)_. The next chunk of code is for the data entries where number > 1, _but_ a range is provided. We provide an `occurrenceID` for these entries, and in the eMoF table they will have measurementTypes `minimum length` and `maximum length` to display the range. As these are all ranged values, all entries contain a hyphen so we can filter for that. 
 
 ``` {r occ_range, eval = FALSE}
-bongo2019_occ3 <- bongo2019_taxa_occ %>% 
-  filter(grepl("-", bongo2019_taxa_occ$length_mm)) %>%
-  mutate(occurrenceID = " ",
-         occurrenceStatus = "present",
-         occurrenceRemarks = NA) %>%
-  rename(eventID = sample, 
-         scientificName = species)
+# bongo2019_occ3 <- bongo2019_taxa_occ %>% 
+#   filter(grepl("-", bongo2019_taxa_occ$length_mm)) %>%
+#   mutate(occurrenceID = " ",
+#          occurrenceStatus = "present",
+#          occurrenceRemarks = NA) %>%
+#   rename(eventID = sample, 
+#          scientificName = species)
 ```
 
 So far, for all the data entries where species have been identified to a species or genus level, we've created occurrence tables for: 
@@ -530,119 +578,119 @@ This leaves two occurrence tables that need to be created:
 Upon inspection, bongo2019_occ3 has sample_id 22003 and Z372, where number = 1, but the length measurement is a range. Therefore, these samples are already included in bongo2019_occ3 dataset and are therefore ommitted from bongo2019_occ4:
 
 ``` {r bongo_occ_ind, eval = FALSE}
-bongo2019_occ4 <- bongo2019_taxa_occ %>%
-  filter(number == 1) %>%
-  filter(!sample_id %in% c("22003", "Z372")) %>%
-  mutate(occurrenceID = " ",
-         occurrenceStatus = "present",
-         occurrenceRemarks = NA) %>%
-  rename(eventID = sample,
-         scientificName = species)
+# bongo2019_occ4 <- bongo2019_taxa_occ %>%
+#   filter(number == 1) %>%
+#   filter(!sample_id %in% c("22003", "Z372")) %>%
+#   mutate(occurrenceID = " ",
+#          occurrenceStatus = "present",
+#          occurrenceRemarks = NA) %>%
+#   rename(eventID = sample,
+#          scientificName = species)
 ```
 
 There are also data entries where the species have an associated WoRMS URN, and where the number > 1, but no individual length measurements (or range) is associated with it. We will also associate an `occurrenceID` and `occurrenceStatus` to these species, and in the extended measurementOrFact table the number (count) will be linked to the `occurrenceID` as a measurement.
 
 ``` {r bongo_occ5, eval = FALSE}
-bongo2019_occ5 <- bongo2019_taxa_occ %>%
-  filter(number > 1)
-bongo2019_occ5$number <- as.numeric(bongo2019_occ5$number)
-# Remove the rows where sample_id matches with those in bongo_occ3 (where length_mm have ranged value)
-bongo2019_occ5 <- bongo2019_occ5[ !(bongo2019_occ5$sample_id %in% bongo2019_occ3$sample_id), ] 
-# Remove the rows where sample_id matches with those in bongo_occ2 (where individual length measurements have been recorded in the notes)
-bongo2019_occ5 <- bongo2019_occ5[ !(bongo2019_occ5$sample_id %in% bongo2019_occ2_ind$sample_id), ]
-# Remove the rows where sample_id matches with those in bongo_petri (dataframe of petri dish with individual length measurements)
-bongo2019_occ5 <- bongo2019_occ5[ !(bongo2019_occ5$sample_id %in% bongo_petri$sample_id), ] %>%
-  mutate(occurrenceID = " ",
-         occurrenceStatus = "present",
-         occurrenceRemarks = NA) %>%  
-  rename(eventID = sample,
-         scientificName = species)
+# bongo2019_occ5 <- bongo2019_taxa_occ %>%
+#   filter(number > 1)
+# bongo2019_occ5$number <- as.numeric(bongo2019_occ5$number)
+# # Remove the rows where sample_id matches with those in bongo_occ3 (where length_mm have ranged value)
+# bongo2019_occ5 <- bongo2019_occ5[ !(bongo2019_occ5$sample_id %in% bongo2019_occ3$sample_id), ] 
+# # Remove the rows where sample_id matches with those in bongo_occ2 (where individual length measurements have been recorded in the notes)
+# bongo2019_occ5 <- bongo2019_occ5[ !(bongo2019_occ5$sample_id %in% bongo2019_occ2_ind$sample_id), ]
+# # Remove the rows where sample_id matches with those in bongo_petri (dataframe of petri dish with individual length measurements)
+# bongo2019_occ5 <- bongo2019_occ5[ !(bongo2019_occ5$sample_id %in% bongo_petri$sample_id), ] %>%
+#   mutate(occurrenceID = " ",
+#          occurrenceStatus = "present",
+#          occurrenceRemarks = NA) %>%  
+#   rename(eventID = sample,
+#          scientificName = species)
 ```
 
 To create the final occurrence extension, the five occurrence tables are joined. 
 
 ``` {r bongo_combined_occ, eval = FALSE}
-bongo2019_occ_fnl <- rbind(bongo2019_occ1, bongo2019_occ2, bongo2019_occ3, bongo2019_occ4, bongo2019_occ5) 
-bongo2019_occ_fnl <- bongo2019_occ_fnl[mixedorder(as.character(bongo2019_occ_fnl$eventID)),]
+# bongo2019_occ_fnl <- rbind(bongo2019_occ1, bongo2019_occ2, bongo2019_occ3, bongo2019_occ4, bongo2019_occ5) 
+# bongo2019_occ_fnl <- bongo2019_occ_fnl[mixedorder(as.character(bongo2019_occ_fnl$eventID)),]
 ```
 
 Given that some scientificNames in the new dataframe `bongo2019_occ_fnl` were derived from the Comment section, these species have often not been written down in such a way that it's recognized by the `worrms` package. Therefore, these need to be rewritten:
 
 ``` {r, eval = FALSE}
-bongo2019_occ_fnl <- bongo2019_occ_fnl %>% mutate(
-  scientificName = ifelse(grepl("Sagitta", bongo2019_occ_fnl$scientificName), "Sagittoidea", scientificName),
-  scientificName = ifelse(grepl("E pacifica", bongo2019_occ_fnl$scientificName), "Euphausia pacifica", scientificName),
-  scientificName = ifelse(grepl("T spinifera", bongo2019_occ_fnl$scientificName), "Thysanoessa spinifera",
-                          scientificName),
-  scientificName = ifelse(grepl("jellies", bongo2019_occ_fnl$scientificName), "Animalia", scientificName),
-  # Data provider indicates that this observation could be Hydrozoa, Scyphozoa, or Ctenophora, and it would be tricky to determine which it is. The common taxonomic classification they have is "Animalia".
-  scientificName = ifelse(grepl("Tspin", bongo2019_occ_fnl$scientificName), "Thysanoessa spinifera", scientificName),
-  scientificName = ifelse(grepl("Aequoria", bongo2019_occ_fnl$scientificName), "Aequorea", scientificName),
-  scientificName = ifelse(grepl("salps", bongo2019_occ_fnl$scientificName), "Salpa", scientificName),
-  scientificName = ifelse(grepl("chaetognaths", bongo2019_occ_fnl$scientificName), "Chaetognatha", scientificName))
-
-# The next bit of code is ugly and should be rewritten.
-bongo2019_worms_id <- bongo2019_occ_fnl %>% filter(!is.na(AphiaID))
-bongo2019_no_worms_id <- bongo2019_occ_fnl %>% filter(is.na(AphiaID)) %>%
-  select(-c(authority, status, rank, parentNameUsageID, kingdom, phylum, class, order, family, genus, lsid))
-
-temp <- worrms::wm_records_names(bongo2019_no_worms_id$scientificName) %>% dplyr::bind_rows() %>%
-  rename(scientificName = scientificname) %>%
-  select(scientificName, authority, status, rank, parentNameUsageID, kingdom, phylum, class, order, family, genus, lsid)
-
-bongo2019_no_worms_id <- left_join(bongo2019_no_worms_id, temp, by = "scientificName") %>% distinct()
-
-# Join this back to the dataframe with all the worms ids: bongo2019_worms_id
-bongo2019_occ_fnl <- plyr::rbind.fill(bongo2019_worms_id, bongo2019_no_worms_id)
+# bongo2019_occ_fnl <- bongo2019_occ_fnl %>% mutate(
+#   scientificName = ifelse(grepl("Sagitta", bongo2019_occ_fnl$scientificName), "Sagittoidea", scientificName),
+#   scientificName = ifelse(grepl("E pacifica", bongo2019_occ_fnl$scientificName), "Euphausia pacifica", scientificName),
+#   scientificName = ifelse(grepl("T spinifera", bongo2019_occ_fnl$scientificName), "Thysanoessa spinifera",
+#                           scientificName),
+#   scientificName = ifelse(grepl("jellies", bongo2019_occ_fnl$scientificName), "Animalia", scientificName),
+#   # Data provider indicates that this observation could be Hydrozoa, Scyphozoa, or Ctenophora, and it would be tricky to determine which it is. The common taxonomic classification they have is "Animalia".
+#   scientificName = ifelse(grepl("Tspin", bongo2019_occ_fnl$scientificName), "Thysanoessa spinifera", scientificName),
+#   scientificName = ifelse(grepl("Aequoria", bongo2019_occ_fnl$scientificName), "Aequorea", scientificName),
+#   scientificName = ifelse(grepl("salps", bongo2019_occ_fnl$scientificName), "Salpa", scientificName),
+#   scientificName = ifelse(grepl("chaetognaths", bongo2019_occ_fnl$scientificName), "Chaetognatha", scientificName))
+# 
+# # The next bit of code is ugly and should be rewritten.
+# bongo2019_worms_id <- bongo2019_occ_fnl %>% filter(!is.na(AphiaID))
+# bongo2019_no_worms_id <- bongo2019_occ_fnl %>% filter(is.na(AphiaID)) %>%
+#   select(-c(authority, status, rank, parentNameUsageID, kingdom, phylum, class, order, family, genus, lsid))
+# 
+# temp <- worrms::wm_records_names(bongo2019_no_worms_id$scientificName) %>% dplyr::bind_rows() %>%
+#   rename(scientificName = scientificname) %>%
+#   select(scientificName, authority, status, rank, parentNameUsageID, kingdom, phylum, class, order, family, genus, lsid)
+# 
+# bongo2019_no_worms_id <- left_join(bongo2019_no_worms_id, temp, by = "scientificName") %>% distinct()
+# 
+# # Join this back to the dataframe with all the worms ids: bongo2019_worms_id
+# bongo2019_occ_fnl <- plyr::rbind.fill(bongo2019_worms_id, bongo2019_no_worms_id)
 ```
 
 It is recommended that columns `sex` and `lifestage` are added to both Occurrence and eMoF extension, so they get added here also. Please note however, that controlled vocabulary for the lifestage won't be added until the eMOF extension. 
 
 ``` {r, eval = FALSE}
-bongo2019_occ_fnl <- bongo2019_occ_fnl %>%
-  rename(lifeStage = stage) %>%
-  mutate(sex = case_when(
-    lifeStage == "Gravid female" ~ "female"),
-  reproductiveCondition = case_when(
-    lifeStage == "Gravid female" ~ "gravid"),
-  occurrenceRemarks = case_when(
-    lifeStage == "Spent" ~ "Spent")) %>%
-  select(-preservation) 
-
-# Spent is not a lifeStage, so this should be changed to NA.
-bongo2019_occ_fnl$lifeStage <- ifelse(bongo2019_occ_fnl$lifeStage == "Spent", NA, bongo2019_occ_fnl$lifeStage)
-bongo2019_occ_fnl$lifeStage <- ifelse(bongo2019_occ_fnl$lifeStage == "Gravid female", "adult", bongo2019_occ_fnl$lifeStage)
+# bongo2019_occ_fnl <- bongo2019_occ_fnl %>%
+#   rename(lifeStage = stage) %>%
+#   mutate(sex = case_when(
+#     lifeStage == "Gravid female" ~ "female"),
+#   reproductiveCondition = case_when(
+#     lifeStage == "Gravid female" ~ "gravid"),
+#   occurrenceRemarks = case_when(
+#     lifeStage == "Spent" ~ "Spent")) %>%
+#   select(-preservation) 
+# 
+# # Spent is not a lifeStage, so this should be changed to NA.
+# bongo2019_occ_fnl$lifeStage <- ifelse(bongo2019_occ_fnl$lifeStage == "Spent", NA, bongo2019_occ_fnl$lifeStage)
+# bongo2019_occ_fnl$lifeStage <- ifelse(bongo2019_occ_fnl$lifeStage == "Gravid female", "adult", bongo2019_occ_fnl$lifeStage)
 ```
 
 I've noticed that in bongo_fnl there is a column 'preservation', indicating whether a Net was preserved in formalin or size fractioned and frozen. In the bongo_occ_fnl dataframe, there is also a column 'preservation', which is "Freeze: -20". I would recommend adding the bongo_fnl preservation column to the occurrence extension. For this reason, this column is removed from the bongo_occ_fnl dataframe.
 
 ``` {r preservation, eval = FALSE}
-preservation <- bongo_fnl %>% select(station, net, preservation)
-preservation$net <- as.numeric(preservation$net)
-bongo2019_occ_fnl <- left_join(bongo2019_occ_fnl, preservation, by = c("station", "net"))
-
-bongo2019_occ_fnl <- bongo2019_occ_fnl %>%
-    rename(Preparations = preservation) %>%
-    mutate(occurrenceID = paste(eventID, "zoop_occ", sep = ":"),
-         occurrenceID = paste(occurrenceID, row_number(), sep = "-"),
-         occurrenceStatus = "present")
-
-bongo2019_occ_ext <- bongo2019_occ_fnl %>% 
-  select(eventID, scientificName, 
-         occurrenceID,
-         occurrenceStatus,
-         reproductiveCondition,
-         scientificNameID = lsid, 
-         scientificAuthorityName = authority,
-         vernacularName,
-         taxonRank = rank,
-         taxonomicStatus = status,
-         sex,
-         lifeStage,
-         kingdom, phylum, class, order, family, genus, Preparations, occurrenceRemarks)
-
-# For review purposes, save this file separate from the other occurrence tables:
-write_csv(bongo2019_occ_ext, here("Bongo", "tidy_data", "bongo2019_occ_Net2.csv"))
+# preservation <- bongo_fnl %>% select(station, net, preservation)
+# preservation$net <- as.numeric(preservation$net)
+# bongo2019_occ_fnl <- left_join(bongo2019_occ_fnl, preservation, by = c("station", "net"))
+# 
+# bongo2019_occ_fnl <- bongo2019_occ_fnl %>%
+#     rename(Preparations = preservation) %>%
+#     mutate(occurrenceID = paste(eventID, "zoop_occ", sep = ":"),
+#          occurrenceID = paste(occurrenceID, row_number(), sep = "-"),
+#          occurrenceStatus = "present")
+# 
+# bongo2019_occ_ext <- bongo2019_occ_fnl %>% 
+#   select(eventID, scientificName, 
+#          occurrenceID,
+#          occurrenceStatus,
+#          reproductiveCondition,
+#          scientificNameID = lsid, 
+#          scientificAuthorityName = authority,
+#          vernacularName,
+#          taxonRank = rank,
+#          taxonomicStatus = status,
+#          sex,
+#          lifeStage,
+#          kingdom, phylum, class, order, family, genus, Preparations, occurrenceRemarks)
+# 
+# # For review purposes, save this file separate from the other occurrence tables:
+# write_csv(bongo2019_occ_ext, here("Bongo", "tidy_data", "bongo2019_occ_Net2.csv"))
 ```
 
 I change bongo_occ_fnl into a new dataframe (bongo2019_occ_ext) because we're going to use the bongo2019_occ_fnl dataset in the eMoF table, but not all columns. This is also the reason why I add `occurrenceID` and `occurrenceStatus` separately at each occurrence extension, rather than all the way at the end when I combine the two extensions. I will need to link those measurements or facts to the specific `occurrenceID`, and if I add the `occurrenceID` only after I've merged the two tables, it'll be very difficult to filter. 
@@ -650,18 +698,18 @@ I change bongo_occ_fnl into a new dataframe (bongo2019_occ_ext) because we're go
 Next, the two occurrence extensions (1 - occurrences in Net 1 for the abundance / community composition study, 2 - occurrences in Net 2 for the isotope / fatty acid analysis) are combined, and saved:
 
 ```{r bongo2019 occ full, eval = FALSE}
-bongo2019_zoo_ext <- plyr::rbind.fill(bongo2019_taxa_abundance, bongo2019_occ_ext)  %>%
- mutate(basisOfRecord = "PreservedSpecimen") 
-
-# Check for duplicated occurrenceIDs:
-bongo2019_zoo_ext %>% janitor::get_dupes(occurrenceID) # Should be none!
-
-# Make sure the folder path exists already (e.g. ./Bongo/tidy_data)
-write_csv(bongo2019_zoo_ext, here("Bongo", "tidy_data", "bongo2019_occ.csv"))
-drive_upload(here("Bongo", "tidy_data", "bongo_occ.csv"),
-             path = "https://drive.google.com/drive/u/0/folders/1cAJP-DGSQZdRhrIYraX8MJXO-h_7qbn2",
-             name = "bongo_occ.csv",
-             overwrite = TRUE)
+# bongo2019_zoo_ext <- plyr::rbind.fill(bongo2019_taxa_abundance, bongo2019_occ_ext)  %>%
+#  mutate(basisOfRecord = "PreservedSpecimen") 
+# 
+# # Check for duplicated occurrenceIDs:
+# bongo2019_zoo_ext %>% janitor::get_dupes(occurrenceID) # Should be none!
+# 
+# # Make sure the folder path exists already (e.g. ./Bongo/tidy_data)
+# write_csv(bongo2019_zoo_ext, here("Bongo", "tidy_data", "bongo2019_occ.csv"))
+# drive_upload(here("Bongo", "tidy_data", "bongo_occ.csv"),
+#              path = "https://drive.google.com/drive/u/0/folders/1cAJP-DGSQZdRhrIYraX8MJXO-h_7qbn2",
+#              name = "bongo_occ.csv",
+#              overwrite = TRUE)
 ```
 
 ***
@@ -671,211 +719,211 @@ drive_upload(here("Bongo", "tidy_data", "bongo_occ.csv"),
 In our extended measurementOrFact table(s), we associate sampling measurements and effort to an `eventID`, and biometric measurements to the `occurrenceID`. 
 
 ``` {r bongo_bottomdepth, eval = FALSE}
-bongo_bottomdepth <- bongo %>% 
-  select(eventID = cast, 
-         depth) %>%
-  distinct(eventID, .keep_all = TRUE) %>%
-  mutate_all(as.character) %>%
-  pivot_longer(cols = depth,
-               names_to = "measurementType",
-               values_to = "measurementValue") %>%
-  mutate(measurementID = case_when(
-    measurementType == "depth" ~ paste(eventID, "depth", sep = ":")),
-        measurementType = recode(measurementType,
-                                 depth = "seafloor depth")) %>%
-  mutate(measurementTypeID = case_when(
-    measurementType == "seafloor depth" ~ "http://vocab.nerc.ac.uk/collection/C00/current/SCILOG/"),
-        measurementUnit = case_when(
-    measurementType == "seafloor depth" ~ "meter"),
-        measurementUnitID = case_when(
-    measurementUnit == "meter" ~ "http://vocab.nerc.ac.uk/collection/P06/current/ULAA/"),
-    measurementMethod = NA) %>%
-  select(eventID, measurementID, measurementType, measurementTypeID, measurementValue, 
-         measurementUnit, measurementUnitID, measurementMethod)
+# bongo_bottomdepth <- bongo %>% 
+#   select(eventID = cast, 
+#          depth) %>%
+#   distinct(eventID, .keep_all = TRUE) %>%
+#   mutate_all(as.character) %>%
+#   pivot_longer(cols = depth,
+#                names_to = "measurementType",
+#                values_to = "measurementValue") %>%
+#   mutate(measurementID = case_when(
+#     measurementType == "depth" ~ paste(eventID, "depth", sep = ":")),
+#         measurementType = recode(measurementType,
+#                                  depth = "seafloor depth")) %>%
+#   mutate(measurementTypeID = case_when(
+#     measurementType == "seafloor depth" ~ "http://vocab.nerc.ac.uk/collection/C00/current/SCILOG/"),
+#         measurementUnit = case_when(
+#     measurementType == "seafloor depth" ~ "meter"),
+#         measurementUnitID = case_when(
+#     measurementUnit == "meter" ~ "http://vocab.nerc.ac.uk/collection/P06/current/ULAA/"),
+#     measurementMethod = NA) %>%
+#   select(eventID, measurementID, measurementType, measurementTypeID, measurementValue, 
+#          measurementUnit, measurementUnitID, measurementMethod)
 ```
 
 Add information on the sampling instrument used, as well as the sampling effort (both the volume of sea water filtered, tow distance and speed of tow). The volume of sea water filtered is measured or estimated both from the flowmeter as well as from the depth-estimate.  
 
 ``` {r sampling effort, eval = FALSE}
-bongo_sampling <- bongo_fnl %>%
-  select(eventID = cast, 
-         tow_distance,
-         depth_estimated_volume_filtered,
-         flowmeter_volume_filtered) %>%
-  mutate(speed_tow = 1) %>%
-  distinct(eventID, .keep_all = TRUE) %>%
-  mutate_all(as.character) %>%
-  pivot_longer(cols = tow_distance:speed_tow,
-               names_to = "measurementType",
-               values_to = "measurementValue") %>%
-  mutate(measurementID = paste(eventID, "bongo", measurementType, sep = ":"),
-         measurementTypeID = case_when(
-           measurementType == "tow_distance" ~ "http://vocab.nerc.ac.uk/collection/P01/current/LENTRACK/",
-           measurementType == "depth_estimated_volume_filtered" ~ "http://vocab.nerc.ac.uk/collection/P01/current/VOLWBSMP/", 
-           measurementType == "flowmeter_volume_filtered" ~ "http://vocab.nerc.ac.uk/collection/P09/current/VOLF/",
-           measurementType == "speed_tow" ~ "http://vocab.nerc.ac.uk/collection/P01/current/TOWSPEED/"),
-  measurementUnit = case_when(
-    measurementType == "tow_distance" ~ "meter",
-    measurementType == "depth_estimated_volume_filtered" ~ "cubic meter",
-    measurementType == "flowmeter_volume_filtered" ~ "cubic meter",
-    measurementType == "speed_tow" ~ "meter per second"),
-  measurementUnitID = case_when(
-    measurementUnit == "meter" ~ "http://vocab.nerc.ac.uk/collection/P06/current/ULAA/",
-    measurementUnit == "cubic meter" ~ "http://vocab.nerc.ac.uk/collection/P06/current/MCUB/",
-    measurementUnit == "meter per second" ~ "http://vocab.nerc.ac.uk/collection/P06/current/UVAA/"),
-  measurementMethod = case_when(
-    measurementType == "depth_estimated_volume_filtered" ~ "Volume filtered as estimated by sampling depth estimate",
-    measurementType == "flowmeter_volume_filtered" ~ "Volume filtered as estimated by flowmeter")) %>%
-    select(eventID, measurementID, measurementType, measurementTypeID, measurementValue,
-           measurementUnit, measurementUnitID, measurementMethod)
+# bongo_sampling <- bongo_fnl %>%
+#   select(eventID = cast, 
+#          tow_distance,
+#          depth_estimated_volume_filtered,
+#          flowmeter_volume_filtered) %>%
+#   mutate(speed_tow = 1) %>%
+#   distinct(eventID, .keep_all = TRUE) %>%
+#   mutate_all(as.character) %>%
+#   pivot_longer(cols = tow_distance:speed_tow,
+#                names_to = "measurementType",
+#                values_to = "measurementValue") %>%
+#   mutate(measurementID = paste(eventID, "bongo", measurementType, sep = ":"),
+#          measurementTypeID = case_when(
+#            measurementType == "tow_distance" ~ "http://vocab.nerc.ac.uk/collection/P01/current/LENTRACK/",
+#            measurementType == "depth_estimated_volume_filtered" ~ "http://vocab.nerc.ac.uk/collection/P01/current/VOLWBSMP/", 
+#            measurementType == "flowmeter_volume_filtered" ~ "http://vocab.nerc.ac.uk/collection/P09/current/VOLF/",
+#            measurementType == "speed_tow" ~ "http://vocab.nerc.ac.uk/collection/P01/current/TOWSPEED/"),
+#   measurementUnit = case_when(
+#     measurementType == "tow_distance" ~ "meter",
+#     measurementType == "depth_estimated_volume_filtered" ~ "cubic meter",
+#     measurementType == "flowmeter_volume_filtered" ~ "cubic meter",
+#     measurementType == "speed_tow" ~ "meter per second"),
+#   measurementUnitID = case_when(
+#     measurementUnit == "meter" ~ "http://vocab.nerc.ac.uk/collection/P06/current/ULAA/",
+#     measurementUnit == "cubic meter" ~ "http://vocab.nerc.ac.uk/collection/P06/current/MCUB/",
+#     measurementUnit == "meter per second" ~ "http://vocab.nerc.ac.uk/collection/P06/current/UVAA/"),
+#   measurementMethod = case_when(
+#     measurementType == "depth_estimated_volume_filtered" ~ "Volume filtered as estimated by sampling depth estimate",
+#     measurementType == "flowmeter_volume_filtered" ~ "Volume filtered as estimated by flowmeter")) %>%
+#     select(eventID, measurementID, measurementType, measurementTypeID, measurementValue,
+#            measurementUnit, measurementUnitID, measurementMethod)
 ```
 
 For the sampling instrument:
 
 ``` {r samplingInstrument, eval = FALSE}
-bongo_instrument <- bongo_fnl %>%
-  select(eventID = cast,
-         gear) %>%
-  mutate(bongo_mesh = 250,
-         bongo_opening = 0.5) %>%
-  distinct(eventID, .keep_all = TRUE) %>%
-  mutate_all(as.character) %>%
-  pivot_longer(cols = gear:bongo_opening,
-               names_to = "measurementType",
-               values_to = "measurementValue") %>%
-  mutate(measurementID = paste(eventID, "bongo", measurementType, sep = ":"),
-         measurementTypeID = case_when(
-           measurementType == "gear" ~ "http://vocab.nerc.ac.uk/collection/Q01/current/Q0100002/",
-           measurementType == "bongo_mesh" ~ "http://vocab.nerc.ac.uk/collection/Q01/current/Q0100015/",
-           measurementType == "bongo_opening" ~ "http://vocab.nerc.ac.uk/collection/Q01/current/Q0100017/"),
-         measurementUnit = case_when(
-           measurementType == "bongo_mesh" ~ "micrometer",
-           measurementType == "bongo_opening" ~ "square meter"),
-         measurementUnitID = case_when(
-           measurementUnit == "micrometer" ~ "http://vocab.nerc.ac.uk/collection/P06/current/UMIC/",
-           measurementUnit == "square meter" ~ "http://vocab.nerc.ac.uk/collection/P06/current/UMSQ/"),
-         measurementValueID = case_when(
-           measurementValue == "Bongo" ~ "http://vocab.nerc.ac.uk/collection/L22/current/NETT0176/"),
-         measurementMethod = NA) %>%
-  select(eventID, measurementID, measurementType, measurementTypeID, measurementValue,
-         measurementValueID, measurementUnit, measurementUnitID, measurementMethod)
+# bongo_instrument <- bongo_fnl %>%
+#   select(eventID = cast,
+#          gear) %>%
+#   mutate(bongo_mesh = 250,
+#          bongo_opening = 0.5) %>%
+#   distinct(eventID, .keep_all = TRUE) %>%
+#   mutate_all(as.character) %>%
+#   pivot_longer(cols = gear:bongo_opening,
+#                names_to = "measurementType",
+#                values_to = "measurementValue") %>%
+#   mutate(measurementID = paste(eventID, "bongo", measurementType, sep = ":"),
+#          measurementTypeID = case_when(
+#            measurementType == "gear" ~ "http://vocab.nerc.ac.uk/collection/Q01/current/Q0100002/",
+#            measurementType == "bongo_mesh" ~ "http://vocab.nerc.ac.uk/collection/Q01/current/Q0100015/",
+#            measurementType == "bongo_opening" ~ "http://vocab.nerc.ac.uk/collection/Q01/current/Q0100017/"),
+#          measurementUnit = case_when(
+#            measurementType == "bongo_mesh" ~ "micrometer",
+#            measurementType == "bongo_opening" ~ "square meter"),
+#          measurementUnitID = case_when(
+#            measurementUnit == "micrometer" ~ "http://vocab.nerc.ac.uk/collection/P06/current/UMIC/",
+#            measurementUnit == "square meter" ~ "http://vocab.nerc.ac.uk/collection/P06/current/UMSQ/"),
+#          measurementValueID = case_when(
+#            measurementValue == "Bongo" ~ "http://vocab.nerc.ac.uk/collection/L22/current/NETT0176/"),
+#          measurementMethod = NA) %>%
+#   select(eventID, measurementID, measurementType, measurementTypeID, measurementValue,
+#          measurementValueID, measurementUnit, measurementUnitID, measurementMethod)
 ```
 
 Save measurements and facts related to the sampling effort and instrument in a separate eMOF extension:
 
 ``` {r, eval = FALSE}
-bongo_samplingmethod <- bind_rows(bongo_bottomdepth, bongo_sampling, 
-                                     bongo_instrument)
-write_csv(bongo_samplingmethod, here("Bongo", "tidy_data", "bongo2019_emof_samplingmethod.csv"))
+# bongo_samplingmethod <- bind_rows(bongo_bottomdepth, bongo_sampling, 
+#                                      bongo_instrument)
+# write_csv(bongo_samplingmethod, here("Bongo", "tidy_data", "bongo2019_emof_samplingmethod.csv"))
 ```
 
 Measurements associated to the `occurrenceID`: 
 
 ``` {r, eval = FALSE}
-bongo_emof <- bongo2019_occ_fnl %>%
-  select(eventID, occurrenceID,
-         scientificName,
-         individualCount = number,
-         length = length_mm,
-         weight = weight_mg,
-         lifeStage,
-         sex,
-         reproductiveCondition) %>%
-  mutate_all(as.character)
+# bongo_emof <- bongo2019_occ_fnl %>%
+#   select(eventID, occurrenceID,
+#          scientificName,
+#          individualCount = number,
+#          length = length_mm,
+#          weight = weight_mg,
+#          lifeStage,
+#          sex,
+#          reproductiveCondition) %>%
+#   mutate_all(as.character)
 ```
 
 Within this dataframe, there are still the data entries that have a length measurements associated to them that's a range (i.e., 15 - 17mm). For these `occurrenceID`s we want to split this column into two, with minimumLength and maximumLength. Afterwards, that dataframe can be merged back in with bongo_emof. 
 
 ``` {r, eval = FALSE}
-range <- bongo_emof %>%
-  filter(grepl("-", bongo_emof$length)) %>%
-  separate(length, c("minimumLength", "maximumLength")) %>%
-  mutate(length = NA)
-range$maximumLength <- gsub("mm", "", range$maximumLength) 
-
-# Remove any rows from bongo_emof2 where length_mm contains a range, add two dummy columns (minimumLength and maximumLength) and use rbind() to merge `range` with this newly created dataframe.
-
-temp <- bongo_emof[ -grep("-", bongo_emof$length), ] %>%
-  mutate(minimumLength = NA,
-         maximumLength = NA)
-
-bongo_emof <- rbind(range, temp)
-
-# In this dataframe there are reported numbers that indicate a minimum number counted (i.e. >1). This will be reported in measurementRemarks:
-bongo_emof$measurementRemarks <- ifelse(grepl(">", bongo_emof$individualCount), "Count value represents a minimum", NA)
-bongo_emof$individualCount <- gsub(">", "", bongo_emof$individualCount)
-
-# Additionally, there are reported values under "length" that indicate a minimum length (i.e. >4mm):
-bongo_emof$minimumLength <- ifelse(grepl(">4mm", bongo_emof$length), "4", bongo_emof$minimumLength)
-bongo_emof$minimumLength <- ifelse(grepl(">2mm", bongo_emof$length), "2", bongo_emof$minimumLength)
-bongo_emof$length <- gsub(">", NA, bongo_emof$length)
+# range <- bongo_emof %>%
+#   filter(grepl("-", bongo_emof$length)) %>%
+#   separate(length, c("minimumLength", "maximumLength")) %>%
+#   mutate(length = NA)
+# range$maximumLength <- gsub("mm", "", range$maximumLength) 
+# 
+# # Remove any rows from bongo_emof2 where length_mm contains a range, add two dummy columns (minimumLength and maximumLength) and use rbind() to merge `range` with this newly created dataframe.
+# 
+# temp <- bongo_emof[ -grep("-", bongo_emof$length), ] %>%
+#   mutate(minimumLength = NA,
+#          maximumLength = NA)
+# 
+# bongo_emof <- rbind(range, temp)
+# 
+# # In this dataframe there are reported numbers that indicate a minimum number counted (i.e. >1). This will be reported in measurementRemarks:
+# bongo_emof$measurementRemarks <- ifelse(grepl(">", bongo_emof$individualCount), "Count value represents a minimum", NA)
+# bongo_emof$individualCount <- gsub(">", "", bongo_emof$individualCount)
+# 
+# # Additionally, there are reported values under "length" that indicate a minimum length (i.e. >4mm):
+# bongo_emof$minimumLength <- ifelse(grepl(">4mm", bongo_emof$length), "4", bongo_emof$minimumLength)
+# bongo_emof$minimumLength <- ifelse(grepl(">2mm", bongo_emof$length), "2", bongo_emof$minimumLength)
+# bongo_emof$length <- gsub(">", NA, bongo_emof$length)
 ```
 
 Furthermore, for observations of Animalia where length is measured, this represents a minimum length value. These are organisms that were size fractioned. These filters were 4.0mm, 2.0mm, 1.0mm, 0.5mm and 0.25mm. Therefore, if a length of 0.25 is reported, this is the minimum length, and the maximum length of that species will be 0.5 (any bigger and it would have been size fractioned). 
 
 ``` {r, eval = FALSE}
-sieve <- bongo_emof %>%
-  filter(scientificName == "Animalia" & !is.na(length)) %>%
-  select(-minimumLength) %>%
-  mutate(length = as.numeric(length),
-    maximumLength = case_when(
-    length == 0.25 ~ 0.5,
-    length == 0.50 ~ 1.0,
-    length == 1.00 ~ 2.0,
-    length == 2.00 ~ 4.0)) %>%
-  rename(minimumLength = length) %>%
-  mutate(length = NA)
-
-sieve_occs <- sieve$occurrenceID
-
-temp2 <- bongo_emof[ !bongo_emof$occurrenceID %in% sieve_occs,]
-bongo_emof <- rbind(sieve, temp2)
+# sieve <- bongo_emof %>%
+#   filter(scientificName == "Animalia" & !is.na(length)) %>%
+#   select(-minimumLength) %>%
+#   mutate(length = as.numeric(length),
+#     maximumLength = case_when(
+#     length == 0.25 ~ 0.5,
+#     length == 0.50 ~ 1.0,
+#     length == 1.00 ~ 2.0,
+#     length == 2.00 ~ 4.0)) %>%
+#   rename(minimumLength = length) %>%
+#   mutate(length = NA)
+# 
+# sieve_occs <- sieve$occurrenceID
+# 
+# temp2 <- bongo_emof[ !bongo_emof$occurrenceID %in% sieve_occs,]
+# bongo_emof <- rbind(sieve, temp2)
 ```
 
 So now we have a dataframe where length measurement ranges have been split up into columns of minimumLength and maximumLengt where applicable. To fit this into DwC format, all columns but 'measurementRemarks' need to be pivotted to fit a long format:
 
 ``` {r, eval = FALSE}
-bongo_emof <- bongo_emof %>%
-  mutate_all(as.character) %>%
-  pivot_longer(cols = c(individualCount, maximumLength, weight, lifeStage, sex, 
-                        reproductiveCondition, minimumLength, maximumLength, length),
-               names_to = "measurementType",
-               values_to = "measurementValue") %>%
-  mutate(measurementID = paste(eventID, measurementType, sep = ":"),
-    measurementTypeID = case_when(
-      measurementType == "length" ~ "http://vocab.nerc.ac.uk/collection/P01/current/OBSINDLX/",
-      measurementType == "individualCount" ~ "http://vocab.nerc.ac.uk/collection/P01/current/OCOUNT01/",
-      measurementType == "sex" ~ "http://vocab.nerc.ac.uk/collection/P01/current/ENTSEX01/",
-      measurementType == "lifeStage" ~ "http://vocab.nerc.ac.uk/collection/P01/current/LSTAGE01/",
-      measurementType == "reproductiveCondition" ~ "http://vocab.nerc.ac.uk/collection/MVB/current/MVB000021/",
-      measurementType == "maximumLength" ~ "http://vocab.nerc.ac.uk/collection/P01/current/OBSMAXLX/",
-      measurementType == "minimumLength" ~ "http://vocab.nerc.ac.uk/collection/P01/current/OBSMINLX/",
-      measurementType == "weight" ~ "http://vocab.nerc.ac.uk/collection/S06/current/S0600148/"), 
-    measurementUnit = case_when(
-      measurementType == "individualCount" ~ "individuals",
-      measurementType == "length" ~ "millimeter",
-      measurementType == "minimumLength" ~ "millimeter",
-      measurementType == "maximumLength" ~ "millimeter",
-      measurementType == "weight" ~ "milligram"),
-    measurementUnitID = case_when(
-      measurementUnit == "individuals" ~ "http://vocab.nerc.ac.uk/collection/P06/current/UUUU/",
-      measurementUnit == "millimeter" ~ "http://vocab.nerc.ac.uk/collection/P06/current/UXMM/",
-      measurementUnit == "milligram" ~ "http://vocab.nerc.ac.uk/collection/P06/current/MGRM/"),
-    measurementValueID = case_when(
-      measurementValue == "Solitary" ~ " ",
-      measurementValue == "Crab zoea" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1137/",
-      measurementValue == "2.0" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S117/",
-      measurementValue == "CV" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1112/",
-      measurementValue == "Larvae" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1128/",
-      measurementValue == "juvenile" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1127/",
-      measurementValue == "adult" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1116/",
-      measurementValue == "Veliger" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1193/",
-      measurementValue == "Hydromedusae" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1126/",
-      measurementValue == "female" ~ "http://vocab.nerc.ac.uk/collection/S10/current/S102/"))
-
-# There are fields under measurementValue that are "NA" or NA. These need to be removed from the eMOF extension. Additionally, a lot of weight measurements are "TBD". I have filtered out these rows as well. 
-bongo_emof <- bongo_emof %>% filter(!is.na(measurementValue)) %>% filter(measurementValue != "NA") %>%
-  filter(measurementValue != "TBD")
+# bongo_emof <- bongo_emof %>%
+#   mutate_all(as.character) %>%
+#   pivot_longer(cols = c(individualCount, maximumLength, weight, lifeStage, sex, 
+#                         reproductiveCondition, minimumLength, maximumLength, length),
+#                names_to = "measurementType",
+#                values_to = "measurementValue") %>%
+#   mutate(measurementID = paste(eventID, measurementType, sep = ":"),
+#     measurementTypeID = case_when(
+#       measurementType == "length" ~ "http://vocab.nerc.ac.uk/collection/P01/current/OBSINDLX/",
+#       measurementType == "individualCount" ~ "http://vocab.nerc.ac.uk/collection/P01/current/OCOUNT01/",
+#       measurementType == "sex" ~ "http://vocab.nerc.ac.uk/collection/P01/current/ENTSEX01/",
+#       measurementType == "lifeStage" ~ "http://vocab.nerc.ac.uk/collection/P01/current/LSTAGE01/",
+#       measurementType == "reproductiveCondition" ~ "http://vocab.nerc.ac.uk/collection/MVB/current/MVB000021/",
+#       measurementType == "maximumLength" ~ "http://vocab.nerc.ac.uk/collection/P01/current/OBSMAXLX/",
+#       measurementType == "minimumLength" ~ "http://vocab.nerc.ac.uk/collection/P01/current/OBSMINLX/",
+#       measurementType == "weight" ~ "http://vocab.nerc.ac.uk/collection/S06/current/S0600148/"), 
+#     measurementUnit = case_when(
+#       measurementType == "individualCount" ~ "individuals",
+#       measurementType == "length" ~ "millimeter",
+#       measurementType == "minimumLength" ~ "millimeter",
+#       measurementType == "maximumLength" ~ "millimeter",
+#       measurementType == "weight" ~ "milligram"),
+#     measurementUnitID = case_when(
+#       measurementUnit == "individuals" ~ "http://vocab.nerc.ac.uk/collection/P06/current/UUUU/",
+#       measurementUnit == "millimeter" ~ "http://vocab.nerc.ac.uk/collection/P06/current/UXMM/",
+#       measurementUnit == "milligram" ~ "http://vocab.nerc.ac.uk/collection/P06/current/MGRM/"),
+#     measurementValueID = case_when(
+#       measurementValue == "Solitary" ~ " ",
+#       measurementValue == "Crab zoea" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1137/",
+#       measurementValue == "2.0" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S117/",
+#       measurementValue == "CV" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1112/",
+#       measurementValue == "Larvae" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1128/",
+#       measurementValue == "juvenile" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1127/",
+#       measurementValue == "adult" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1116/",
+#       measurementValue == "Veliger" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1193/",
+#       measurementValue == "Hydromedusae" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1126/",
+#       measurementValue == "female" ~ "http://vocab.nerc.ac.uk/collection/S10/current/S102/"))
+# 
+# # There are fields under measurementValue that are "NA" or NA. These need to be removed from the eMOF extension. Additionally, a lot of weight measurements are "TBD". I have filtered out these rows as well. 
+# bongo_emof <- bongo_emof %>% filter(!is.na(measurementValue)) %>% filter(measurementValue != "NA") %>%
+#   filter(measurementValue != "TBD")
 ```
 
 As there were also comments in the dataset, we have to make sure we include those in the measurementOrFact extension, as they might be important to the measurements. Additionally, as there is no NERC vocabulary for the different length types in this dataset, we include this column in the measurementRemarks, alongside the original notes. 
@@ -883,130 +931,130 @@ As there were also comments in the dataset, we have to make sure we include thos
 - [ ] However, ideally I'd like length type information to only be included to the length, minimumLength or maximumLength measurement.  
 
 ``` {r measurementRemarks, eval = FALSE}
-bongo_measurementRemarks <- bongo2019_taxa %>%
-  select(eventID = sample, length_type, notes)
-bongo_measurementRemarks <- bongo_measurementRemarks %>%
-  mutate(notes = paste(notes, "Length type", sep = ". "),
-         notes = paste(notes, length_type, sep = ": "))
-
-# As not all data entries had a comment, some were left with NA. This string needs to be removed.
-bongo_measurementRemarks$notes <- gsub("NA. ", "", bongo_measurementRemarks$notes)
-bongo_measurementRemarks <- bongo_measurementRemarks %>%
-  rename(measurementRemarks = notes) %>%
-  select(-length_type) %>%
-  distinct()
-
-# Save measurements (eMOF) related to the length and weight measurements:
-bongo2019_net2_emof <- merge(bongo_emof, bongo_measurementRemarks,
-                      by = c("eventID"), all = T)
-
-write_csv(bongo2019_net2_emof, here("Bongo", "tidy_data", "bongo2019_emof_Net2.csv"))
+# bongo_measurementRemarks <- bongo2019_taxa %>%
+#   select(eventID = sample, length_type, notes)
+# bongo_measurementRemarks <- bongo_measurementRemarks %>%
+#   mutate(notes = paste(notes, "Length type", sep = ". "),
+#          notes = paste(notes, length_type, sep = ": "))
+# 
+# # As not all data entries had a comment, some were left with NA. This string needs to be removed.
+# bongo_measurementRemarks$notes <- gsub("NA. ", "", bongo_measurementRemarks$notes)
+# bongo_measurementRemarks <- bongo_measurementRemarks %>%
+#   rename(measurementRemarks = notes) %>%
+#   select(-length_type) %>%
+#   distinct()
+# 
+# # Save measurements (eMOF) related to the length and weight measurements:
+# bongo2019_net2_emof <- merge(bongo_emof, bongo_measurementRemarks,
+#                       by = c("eventID"), all = T)
+# 
+# write_csv(bongo2019_net2_emof, here("Bongo", "tidy_data", "bongo2019_emof_Net2.csv"))
 ```
 
 The second eMOF extension we create is for the abundance / community analysis study, which is from the `bongo2019_abun` dataframe.  
 
 ``` {r eMOF Bongo abundance, eval = FALSE}
-bongo_emof_abun <- bongo2019_abun %>%
-  select(occurrenceID, lifeStage, sex, 
-         individualCount:abund_m3_depth_est) %>%
-  mutate_all(as.character) %>%
-  pivot_longer(cols = lifeStage:abund_m3_depth_est,
-               names_to = "measurementType",
-               values_to = "measurementValue") %>%
-  mutate(measurementID = case_when(
-      measurementType == "lifeStage" ~ paste(occurrenceID, "stage", sep = ":"),
-      measurementType == "sex" ~ paste(occurrenceID, "sex", sep = ":"),
-      measurementType == "individualCount" ~ paste(occurrenceID, "ind_counted", sep = ":"),
-      measurementType == "ind_total" ~ paste(occurrenceID, "ind_total", sep = ":"),
-      measurementType == "abund_m3_flow_est" ~ paste(occurrenceID, "abund_flow", sep = ":"),
-      measurementType == "abund_m3_depth_est" ~ paste(occurrenceID, "abund_depth", sep = ":")),
-    measurementMethod = case_when(
-      measurementType == "individualCount" ~ "Number of individuals observed in sample",
-      measurementType == "ind_total" ~ "Number of individuals observed in sample expanded to total sample volume",
-      measurementType == "abund_m3_flow_est" ~ "Abundance estimated from flowmeter volume estimate",
-      measurementType == "abund_m3_depth_est" ~ "Abundance estimated from depth estimated volume"),
-    measurementTypeID = case_when(
-      measurementType == "lifeStage" ~ "http://vocab.nerc.ac.uk/collection/P01/current/LSTAGE01/",
-      measurementType == "sex" ~ "http://vocab.nerc.ac.uk/collection/P01/current/ENTSEX01/",
-      measurementType == "individualCount" ~ "http://vocab.nerc.ac.uk/collection/P01/current/OCOUNT01/",
-      measurementType == "ind_total" ~ "http://vocab.nerc.ac.uk/collection/P01/current/OCOUNT01/",
-      measurementType == "abund_m3_flow_est" ~ "http://vocab.nerc.ac.uk/collection/P01/current/SDBIOL01/",
-      measurementType == "abund_m3_depth_est" ~ "http://vocab.nerc.ac.uk/collection/P01/current/SDBIOL01/"), 
-    measurementUnit = case_when(
-      measurementType == "individualCount" ~ "individuals",
-      measurementType == "ind_total" ~ "individuals",
-      measurementType == "abund_m3_depth_est" ~ "individuals per cubic meter",
-      measurementType == "abund_m3_flow_est" ~ "individuals per cubic meter"), 
-    measurementMethod = case_when(
-      measurementType == "abund_m3_depth_est" ~ "abundance calculated using the volume filtered as estimated by sampling depth estimate",
-      measurementType == "abund_m3_flow_est" ~ "abundance calculated using the volume filtered as measured by the flowmeter"),
-    measurementUnitID = case_when(
-      measurementUnit == "individuals" ~ "http://vocab.nerc.ac.uk/collection/P06/current/UUUU/", 
-      measurementUnit == "individuals per cubic meter" ~ "http://vocab.nerc.ac.uk/collection/P06/current/UPMM/"),
-    measurementValueID = case_when(
-      measurementValue == "M" ~ "http://vocab.nerc.ac.uk/collection/S10/current/S103/",
-      measurementValue == "F" ~ "http://vocab.nerc.ac.uk/collection/S10/current/S102/",
-      measurementValue == "C6" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1116/",
-      measurementValue == "C5" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1112/",
-      measurementValue == "C4" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1110/",
-      measurementValue == "C3" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S118/",
-      measurementValue == "C2" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S117/",
-      measurementValue == "C1" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S111/",
-      measurementValue == "juvenile" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1127/",
-      measurementValue == "calyptopsis" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1118/",
-      measurementValue == "egg" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1122/",
-      measurementValue == "larva" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1128/",
-      measurementValue == "nauplius" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1130/",
-      measurementValue == "zoea" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1137/",
-      measurementValue == "furcillia" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1123/",
-      measurementValue == "nurse?" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1196/",
-      measurementValue == "trochophore" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1192/",
-      measurementValue == "float" ~ " ",
-      measurementValue == "veliger" ~  "http://vocab.nerc.ac.uk/collection/S11/current/S1193/",
-      measurementValue == "paralarva" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1194/",
-      measurementValue == "s0" ~ " ",
-      measurementValue == "eudoxid" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1195/",
-      measurementValue == "gastrozoid" ~ " ",
-      measurementValue == "gas float" ~ " ",
-      measurementValue == "<0.5mm|<1mm|1mm" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1152/"))
-
-# Make sure the folder path exists already (e.g. ./Bongo/tidy_data)
-write_csv(bongo_emof_abun, here("Bongo", "tidy_data", "bongo2019_emof_Net1.csv"))
+# bongo_emof_abun <- bongo2019_abun %>%
+#   select(occurrenceID, lifeStage, sex, 
+#          individualCount:abund_m3_depth_est) %>%
+#   mutate_all(as.character) %>%
+#   pivot_longer(cols = lifeStage:abund_m3_depth_est,
+#                names_to = "measurementType",
+#                values_to = "measurementValue") %>%
+#   mutate(measurementID = case_when(
+#       measurementType == "lifeStage" ~ paste(occurrenceID, "stage", sep = ":"),
+#       measurementType == "sex" ~ paste(occurrenceID, "sex", sep = ":"),
+#       measurementType == "individualCount" ~ paste(occurrenceID, "ind_counted", sep = ":"),
+#       measurementType == "ind_total" ~ paste(occurrenceID, "ind_total", sep = ":"),
+#       measurementType == "abund_m3_flow_est" ~ paste(occurrenceID, "abund_flow", sep = ":"),
+#       measurementType == "abund_m3_depth_est" ~ paste(occurrenceID, "abund_depth", sep = ":")),
+#     measurementMethod = case_when(
+#       measurementType == "individualCount" ~ "Number of individuals observed in sample",
+#       measurementType == "ind_total" ~ "Number of individuals observed in sample expanded to total sample volume",
+#       measurementType == "abund_m3_flow_est" ~ "Abundance estimated from flowmeter volume estimate",
+#       measurementType == "abund_m3_depth_est" ~ "Abundance estimated from depth estimated volume"),
+#     measurementTypeID = case_when(
+#       measurementType == "lifeStage" ~ "http://vocab.nerc.ac.uk/collection/P01/current/LSTAGE01/",
+#       measurementType == "sex" ~ "http://vocab.nerc.ac.uk/collection/P01/current/ENTSEX01/",
+#       measurementType == "individualCount" ~ "http://vocab.nerc.ac.uk/collection/P01/current/OCOUNT01/",
+#       measurementType == "ind_total" ~ "http://vocab.nerc.ac.uk/collection/P01/current/OCOUNT01/",
+#       measurementType == "abund_m3_flow_est" ~ "http://vocab.nerc.ac.uk/collection/P01/current/SDBIOL01/",
+#       measurementType == "abund_m3_depth_est" ~ "http://vocab.nerc.ac.uk/collection/P01/current/SDBIOL01/"), 
+#     measurementUnit = case_when(
+#       measurementType == "individualCount" ~ "individuals",
+#       measurementType == "ind_total" ~ "individuals",
+#       measurementType == "abund_m3_depth_est" ~ "individuals per cubic meter",
+#       measurementType == "abund_m3_flow_est" ~ "individuals per cubic meter"), 
+#     measurementMethod = case_when(
+#       measurementType == "abund_m3_depth_est" ~ "abundance calculated using the volume filtered as estimated by sampling depth estimate",
+#       measurementType == "abund_m3_flow_est" ~ "abundance calculated using the volume filtered as measured by the flowmeter"),
+#     measurementUnitID = case_when(
+#       measurementUnit == "individuals" ~ "http://vocab.nerc.ac.uk/collection/P06/current/UUUU/", 
+#       measurementUnit == "individuals per cubic meter" ~ "http://vocab.nerc.ac.uk/collection/P06/current/UPMM/"),
+#     measurementValueID = case_when(
+#       measurementValue == "M" ~ "http://vocab.nerc.ac.uk/collection/S10/current/S103/",
+#       measurementValue == "F" ~ "http://vocab.nerc.ac.uk/collection/S10/current/S102/",
+#       measurementValue == "C6" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1116/",
+#       measurementValue == "C5" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1112/",
+#       measurementValue == "C4" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1110/",
+#       measurementValue == "C3" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S118/",
+#       measurementValue == "C2" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S117/",
+#       measurementValue == "C1" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S111/",
+#       measurementValue == "juvenile" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1127/",
+#       measurementValue == "calyptopsis" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1118/",
+#       measurementValue == "egg" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1122/",
+#       measurementValue == "larva" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1128/",
+#       measurementValue == "nauplius" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1130/",
+#       measurementValue == "zoea" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1137/",
+#       measurementValue == "furcillia" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1123/",
+#       measurementValue == "nurse?" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1196/",
+#       measurementValue == "trochophore" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1192/",
+#       measurementValue == "float" ~ " ",
+#       measurementValue == "veliger" ~  "http://vocab.nerc.ac.uk/collection/S11/current/S1193/",
+#       measurementValue == "paralarva" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1194/",
+#       measurementValue == "s0" ~ " ",
+#       measurementValue == "eudoxid" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1195/",
+#       measurementValue == "gastrozoid" ~ " ",
+#       measurementValue == "gas float" ~ " ",
+#       measurementValue == "<0.5mm|<1mm|1mm" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1152/"))
+# 
+# # Make sure the folder path exists already (e.g. ./Bongo/tidy_data)
+# write_csv(bongo_emof_abun, here("Bongo", "tidy_data", "bongo2019_emof_Net1.csv"))
 ```
 
 Finally, join all the tables together to form the measurementOrFact extension, and save it locally and on GoogleDrive: 
 
 ``` {r bongo_measurementOrFact Core, eval = FALSE}
-bongo_measurementOrFact <- bind_rows(bongo_bottomdepth, bongo_sampling, 
-                                     bongo_instrument, bongo_emof,
-                                     bongo_emof_abun)
-bongo_measurementOrFact <- merge(bongo_measurementOrFact, bongo_measurementRemarks,
-                                 by = c("eventID", "measurementRemarks"), all = T) %>%
-  select(eventID, occurrenceID, measurementID, measurementType, measurementTypeID, measurementValue,
-        measurementValueID, measurementUnit, measurementUnitID, measurementRemarks) %>% 
-    distinct()
-
-# If you want to change the order of the eventID, use:
-bongo_measurementOrFact <- bongo_measurementOrFact[mixedorder(as.character(bongo_measurementOrFact$eventID)),]
-
-# If measurementValue is NA AND measurementRemarks is NA, these rows need to be omitted as well:
-bongo_measurementOrFact <- bongo_measurementOrFact[!with(bongo_measurementOrFact, is.na(measurementValue) & 
-                                                           is.na(measurementRemarks)),]
-
-# Make sure the folder path exists already (e.g. ./Bongo/tidy_data)
-write_csv(bongo_measurementOrFact, here("Bongo", "tidy_data", "bongo_emof.csv"))
-drive_upload(here("Bongo", "tidy_data", "bongo_emof.csv"),
-             path = "https://drive.google.com/drive/u/0/folders/1cAJP-DGSQZdRhrIYraX8MJXO-h_7qbn2",
-             name = "bongo_emof.csv",
-             overwrite = TRUE)
+# bongo_measurementOrFact <- bind_rows(bongo_bottomdepth, bongo_sampling, 
+#                                      bongo_instrument, bongo_emof,
+#                                      bongo_emof_abun)
+# bongo_measurementOrFact <- merge(bongo_measurementOrFact, bongo_measurementRemarks,
+#                                  by = c("eventID", "measurementRemarks"), all = T) %>%
+#   select(eventID, occurrenceID, measurementID, measurementType, measurementTypeID, measurementValue,
+#         measurementValueID, measurementUnit, measurementUnitID, measurementRemarks) %>% 
+#     distinct()
+# 
+# # If you want to change the order of the eventID, use:
+# bongo_measurementOrFact <- bongo_measurementOrFact[mixedorder(as.character(bongo_measurementOrFact$eventID)),]
+# 
+# # If measurementValue is NA AND measurementRemarks is NA, these rows need to be omitted as well:
+# bongo_measurementOrFact <- bongo_measurementOrFact[!with(bongo_measurementOrFact, is.na(measurementValue) & 
+#                                                            is.na(measurementRemarks)),]
+# 
+# # Make sure the folder path exists already (e.g. ./Bongo/tidy_data)
+# write_csv(bongo_measurementOrFact, here("Bongo", "tidy_data", "bongo_emof.csv"))
+# drive_upload(here("Bongo", "tidy_data", "bongo_emof.csv"),
+#              path = "https://drive.google.com/drive/u/0/folders/1cAJP-DGSQZdRhrIYraX8MJXO-h_7qbn2",
+#              name = "bongo_emof.csv",
+#              overwrite = TRUE)
 ```
 
 To visualize the sampling stations in a map (first ensure that decimalLongitude and decimalLatitude are numeric):
 
 ``` {r bongo_visualizations, eval = FALSE}
-bongo_event$decimalLatitude <- as.numeric(bongo_event$decimalLatitude)
-bongo_event$decimalLongitude <- as.numeric(bongo_event$decimalLongitude)
-bongo_leaflet <- obistools::plot_map_leaflet(bongo_event)
-bongo_map <- obistools::plot_map(bongo_event, zoom = TRUE)
-ggsave(filename = "bongo_map.png", plot = bongo_map, path = here::here("Bongo", "maps"))
+# bongo_event$decimalLatitude <- as.numeric(bongo_event$decimalLatitude)
+# bongo_event$decimalLongitude <- as.numeric(bongo_event$decimalLongitude)
+# bongo_leaflet <- obistools::plot_map_leaflet(bongo_event)
+# bongo_map <- obistools::plot_map(bongo_event, zoom = TRUE)
+# ggsave(filename = "bongo_map.png", plot = bongo_map, path = here::here("Bongo", "maps"))
 ```
