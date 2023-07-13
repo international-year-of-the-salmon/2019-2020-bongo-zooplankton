@@ -138,7 +138,8 @@ bongo_abun <- read_csv(here("original_data", "IYSZoopAbund2019_2020Long.csv")) %
 
 # Add additional data from Joanne Breckenridge. Create dummy columns for latitude and longitude to be populated later:
 bongo_kag <- read_csv(here("original_data", "IYSKaganoSpecRemovedfromNet.csv")) %>%
-  janitor::clean_names()
+  janitor::clean_names() 
+bongo_kag$previous_identifications <- NA
 
 bongo_abun <- rbind(bongo_abun, bongo_kag)
 
@@ -160,6 +161,13 @@ We ensure we keep the original recording of the observation in the column _verba
 ``` {r, eval = FALSE}
 bongo_abun$verbatimIdentification = bongo_abun$id
 bongo_abun$identificationQualifier <- ifelse(grepl("sp.|spp.", bongo_abun$id), "sp. indet.", NA)
+
+# Joanne Breckenridge provided additional information regarding sp. and spp. to include in the identificationRemarks:
+bongo_abun <- bongo_abun %>% 
+  mutate(identificationRemarks = case_when(
+    grepl("sp.", bongo_abun$id) ~ "Taxonomist suspects that the individuals are all a single species, but unsure which species.",
+    grepl("spp.", bongo_abun$id) ~ "It was not possible to distinguish the early developmental stages of the species within the genus."
+  ))
 bongo_abun$id <- gsub("\\b sp.\\b|\\b spp.\\b", "", bongo_abun$id)
 bongo_abun$id <- gsub("egg|nauplius|larva|juvenile|calyptopsis|furcillia", "", bongo_abun$id)
 
@@ -268,7 +276,8 @@ bongo_abun <- bongo_abun %>%
          taxonRank = rank,
          taxonomicStatus = status,
          identificationQualifier,
-         kingdom, phylum, class, order, family, genus) %>%
+         kingdom, phylum, class, order, family, genus,
+         previousIdentifications = previous_identifications) %>%
   group_by(eventID) %>%
   mutate(specificEpithet = stringr::word(scientificName, 2),
          occurrenceID = paste(eventID, row_number(), sep = "-"),
