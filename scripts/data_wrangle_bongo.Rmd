@@ -112,6 +112,8 @@ bongo_fnl <- bongo_fnl %>%
   mutate(geodeticDatum = "WGS84",
          language = "en",
          modified = lubridate::today(),
+         bibliographicCitation = "Hunt, B., Mahara, N., & Pakhomov, E. (2023). Zooplankton Bongo Net Data from the 2019 and 2020 Gulf of Alaska International Year of the Salmon Expeditions [Data set]. North Pacific Anadromous Fish Commission. https://doi.org/10.21966/7cmt-ca72",
+         datasetID = "https://doi.org/10.21966/7cmt-ca72",
          license = "https://creativecommons.org/licenses/by/4.0/legalcode",
          informationWithheld = "Contact data provider for information on abundance, sizes and biomass.",
          institutionID = "https://edmo.seadatanet.org/report/2220",
