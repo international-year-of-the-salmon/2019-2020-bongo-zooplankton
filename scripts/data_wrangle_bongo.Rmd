@@ -134,18 +134,16 @@ __Comment added on April 4, 2023__: Received updated information from Joanne Bre
 Create an Occurrence extension for the taxonomic abundance data. 
 
 ``` {r bongo2019 abundance occ, eval = FALSE, warning = FALSE}
-bongo_abun <- read_csv(here("original_data", "IYSZoopAbund2019_2020Long.csv")) %>%
-  janitor::clean_names() %>%
-  select(-x1)
+bongo_abun <- read.csv(here("original_data", "IYSZoopAbund2019_2020Long.csv")) %>%
+  janitor::clean_names()
 
 # Add additional data from Joanne Breckenridge. Create dummy columns for latitude and longitude to be populated later:
-bongo_kag <- read_csv(here("original_data", "IYSKaganoSpecRemovedfromNet.csv")) %>%
+bongo_kag <- read.csv(here("original_data", "IYSKaganoSpecRemovedfromNet.csv")) %>%
   janitor::clean_names() 
-bongo_kag$previous_identifications <- NA
+bongo_kag$station <- as.character(bongo_kag$station)
 
-bongo_abun <- rbind(bongo_abun, bongo_kag)
+bongo_abun <- bind_rows(bongo_abun, bongo_kag)
 
-bongo_abun$date <- as.Date(bongo_abun$date, format = "%m/%d/%Y")
 bongo_abun$net <- 1
 bongo2019_abun <- subset(bongo_abun, date >= "2019-02-19" & date <= "2019-03-15") %>%
   mutate(eventID = paste("IYS2019", "Kaganovsky", station, "Bongo", net, sep = "-"))
@@ -160,7 +158,74 @@ Manual inspection of this dataframe shows that there are still a few species (id
 
 We ensure we keep the original recording of the observation in the column _verbatimIdentification_.
 
+The following section is included to address some of the corrections to the abundance as per Joanne Breckenridge: 
+
 ``` {r, eval = FALSE}
+
+bongo_abun$flowProp <- bongo_abun$vol_flow_est/bongo_abun$vol_depth_est
+
+bongo_abun <- bongo_abun %>% 
+  mutate(abundance = case_when(
+    flowProp >= 0.5 ~ abund_m3_flow_est,
+    flowProp < 0.5 ~ abund_m3_depth_est
+  ))
+
+# This is a specimen removed from net in 2019 and identified onboard. Primno pacifica is not a species. It is recorded as an amphipod, so it is not 'Primnoa pacifica' and is probably either Primno abyssalis or Themisto pacifica.
+#metadata has label saying 12 were removed, but records in cruise logbook are of one 12mm individual removed. (12 mm seems big for T. pacifica so I'm putting it as P. abyssalis)
+
+bongo_abun <- bongo_abun %>% 
+  mutate(abundance = case_when(
+    id == 'Primno pacifica' ~ abundance/12,
+    id != 'Primno pacifica' ~ abundance
+  ))
+
+# working on combined zoop data
+
+bongo_abun$id[bongo_abun$id == 'Primno pacifica' ] <- 'Primno abyssalis'
+bongo_abun$id[bongo_abun$id == 'Scaphocalanus brevicaudatus' ] <- 'Spinocalanus brevicaudatus'
+
+bongo_abun <- bongo_abun %>% 
+  mutate(vessel = case_when(
+    yearletter == "A" ~ "Kaganovsky",
+    yearletter == "B" ~ "Legacy"))
+
+# Calanus correction for C4-C6:
+bongo_abun$id[bongo_abun$id == "Calanus marshallae" & bongo_abun$station %in% c("P", "Q")] <- "Calanus marshallae C4-C6"
+
+# Change Taxon of all remaining C. marshallae C4-C6 from 2019 and 2020 to Neocalanus
+bongo_abun$id[bongo_abun$vessel %in% c("Kaganovsky", "Legacy") & bongo_abun$id == "Calanus marshallae" & bongo_abun$stage %in% c("C4", "C5", "C6") ] <- "Neocalanus flemingeri/plumchrus C4-C6"
+
+bongo_abun <- bongo_abun %>%
+  group_by(eventID, vessel, station, id, sf_proc, stage, sex) %>%
+  summarise(abundance = sum(abundance)) %>%
+  ungroup()
+
+#At LegacyQ, 100% of C.marsh remain as C.marsh
+#At LegacyP, 77% of C.marsh go to N. flem/plum
+
+x <- bongo_abun %>%
+  subset(id == "Calanus marshallae C4-C6" & station == "P")
+
+v <- x$abundance
+
+y <- bongo_abun %>%
+  subset(id == 'Neocalanus flemingeri/plumchrus C4-C6' & station =='P')
+
+w <- y$abundance
+
+bongo_abun$abundance[bongo_abun$id == "Calanus marshallae C4-C6" & bongo_abun$station == "P"] <- v*0.33
+bongo_abun$abundance[bongo_abun$id == 'Neocalanus flemingeri/plumchrus C4-C6' & bongo_abun$station == 'P'] <- v*0.77+w
+
+#Combine Calanus C1-C3 and Neocalanus C1-C3 due to likely confusion in 2019 and 2020.
+
+bongo_abun$id[bongo_abun$id == 'Calanus sp.' & bongo_abun$stage %in% c("C1", "C2", "C3")] <- 'Neocalanus+Calanus C1-C3'
+bongo_abun$id[bongo_abun$id == 'Neocalanus sp.' & bongo_abun$stage %in% c("C1", "C2", "C3")] <- 'Neocalanus+Calanus C1-C3'
+```
+
+Further standardization: 
+
+```{r}
+
 bongo_abun$verbatimIdentification = bongo_abun$id
 bongo_abun$identificationQualifier <- ifelse(grepl("sp.|spp.", bongo_abun$id), "sp. indet.", NA)
 
@@ -201,7 +266,7 @@ bongo_abun$scientificname <- gsub("Copepod", "Copepoda", bongo_abun$scientificna
 bongo_abun$scientificname <- gsub("Mesocalanus tenucornis", "Mesocalanus tenuicornis", bongo_abun$scientificname)
 bongo_abun$scientificname <- gsub("Oikopleura dioica", "Oikopleura (Vexillaria) dioica", bongo_abun$scientificname)
 bongo_abun$scientificname <- gsub("Ophuroidea", "Ophiuroidea", bongo_abun$scientificname)
-bongo_abun$scientificname <- gsub("Scaphocalanus brevicaudatus", "Scaphocalanus brevicornis", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Scaphocalanus brevicaudatus", "Spinocalanus brevicaudatus", bongo_abun$scientificname)
 bongo_abun$scientificname <- gsub("Siphonophore", "Siphonophorae", bongo_abun$scientificname)
 bongo_abun$scientificname <- gsub("Polychaete", "Polychaeta", bongo_abun$scientificname)
 bongo_abun$scientificname <- gsub("Trochophore", "Animalia", bongo_abun$scientificname) 
@@ -227,6 +292,9 @@ bongo_abun$scientificname <- gsub("Calanoid A", "Calanoida", bongo_abun$scientif
 # Because I changed Chaetognath earlier, it changed the code below which I had to alter. (rewrite this). 
 bongo_abun$scientificname <- gsub("Chaetognatha sp. (no heads)", "Chaetognatha", bongo_abun$scientificname, fixed = TRUE)
 bongo_abun$scientificname <- gsub("\\bNeocalanus/Calanus\\b", "Calanidae", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Neocalanus\\+Calanus C1\\-C3", "Calanidae", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Neocalanus flemingeri/plumchrus C4-C6", "Neocalanus", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Calanus marshallae C4-C6", "Calanus marshallae", bongo_abun$scientificname)
 ```
 
 Unsure why, but the following will have to be run in a separate chunk:
@@ -254,6 +322,8 @@ dup_entries <- bongo_worms_id %>%
   group_by(scientificname) %>%
   filter(n() > 1)
 
+bongo_abun$scientificname <- gsub("Euphausiidaeae", "Euphausiidae", bongo_abun$scientificname)
+
 no_worms_id_2 <- left_join(bongo_abun, bongo_worms_id, by = "scientificname") %>% filter(is.na(AphiaID)) %>% distinct(scientificname)
 
 ```
@@ -261,25 +331,21 @@ no_worms_id_2 <- left_join(bongo_abun, bongo_worms_id, by = "scientificname") %>
 Merge this dataset back into original dataframe. First remove the column "genus" from bongo_abun, because otherwise this one is copied. individualCount, ind_total, abund_m3_flow_est and abund_m3_depth_est are included in the original dataframe, because this will be the data frame that I work off of for the eMOF once this data can be made publicly available. 
 
 ``` {r, eval = FALSE}
-bongo_abun <- bongo_abun %>% select(-genus)
+
 bongo_abun <- left_join(bongo_abun, bongo_worms_id, by = "scientificname")
 bongo_abun <- bongo_abun %>%
   select(eventID,
          verbatimIdentification,
          scientificName = scientificname,
          scientificNameID = lsid,
-         scientificAuthorityName = authority,
-         individualCount = ind_counted,
-         ind_total,
-         abund_m3_flow_est,
-         abund_m3_depth_est,
+         authority,
+         abundance,
          lifeStage = stage,
          sex,
          taxonRank = rank,
          taxonomicStatus = status,
          identificationQualifier,
-         kingdom, phylum, class, order, family, genus,
-         previousIdentifications = previous_identifications) %>%
+         kingdom, phylum, class, order, family, genus) %>%
   group_by(eventID) %>%
   mutate(specificEpithet = stringr::word(scientificName, 2),
          occurrenceID = paste(eventID, row_number(), sep = "-"),
@@ -287,7 +353,14 @@ bongo_abun <- bongo_abun %>%
          basisOfRecord = "PreservedSpecimen") %>%
   ungroup()
 
-bongo_occ <- bongo_abun %>% select(-c(individualCount, ind_total, abund_m3_flow_est, abund_m3_depth_est))
+bongo_abun <- bongo_abun %>%
+  mutate(authority = str_replace(authority, "\\(|\\)", ""),
+         scientificName = ifelse(!is.na(authority),
+                                 paste0(scientificName, " (", authority, ")"),
+                                 scientificName)) %>%
+  rename(scientificNameAuthorship = authority)
+
+bongo_occ <- bongo_abun %>% select(-abundance)
 
 # Check for duplicated occurrenceIDs:
 bongo_occ %>% janitor::get_dupes(occurrenceID) # Should be none!
