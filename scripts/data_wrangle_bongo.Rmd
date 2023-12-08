@@ -161,7 +161,7 @@ bongo2020_abun <- subset(bongo_abun, date >= "2020-03-12" & date <= "2020-04-04"
 bongo_abun <- rbind(bongo2019_abun, bongo2020_abun)
 ```
 
-The following section is per Joanne Breckenridge to improve the estimates for the abundance data associated with certain observed taxa:
+The following section is per Joanne Breckenridge to improve the estimates for the abundance data associated with certain observed taxa. Credits for the code go to Joanne.
 
 ```{r, warning = FALSE, message = FALSE}
 bongo_abun$flowProp <- bongo_abun$vol_flow_est/bongo_abun$vol_depth_est
@@ -175,6 +175,50 @@ bongo_abun <- bongo_abun %>%
   mutate(abundance = case_when(
     id == 'Primno pacifica' ~ abundance/12,
     id != 'Primno  pacifica' ~ abundance))
+
+#where KagLeg$species = C1, C2, or C3...
+bongo_abun$stage[bongo_abun$species == 'C1'] <- 'C1'
+bongo_abun$stage[bongo_abun$species == 'C2'] <- 'C2'
+bongo_abun$stage[bongo_abun$species == 'C3'] <- 'C3'
+
+#Euphausiid stage is often missing, after consulting with Natalie...
+
+bongo_abun$stage[bongo_abun$id == 'Euphausia pacifica' & bongo_abun$sex == 'F'] <- 'adult'
+bongo_abun$stage[bongo_abun$id == 'Euphausia pacifica' & bongo_abun$sex == 'M'] <- 'adult'
+bongo_abun <- bongo_abun %>% 
+  mutate(stage = replace(stage, is.na(stage) & id == 'Euphausia pacifica', 'juvenile'))
+
+bongo_abun$stage[bongo_abun$id == 'Thysanoessa longipes' & bongo_abun$sex == 'F'] <- 'adult'
+bongo_abun$stage[bongo_abun$id == 'Thysanoessa longipes' & bongo_abun$sex == 'M'] <- 'adult'
+bongo_abun <- bongo_abun %>% 
+  mutate(stage = replace(stage, is.na(stage) & id =='Thysanoessa longipes', 'juvenile'))
+
+bongo_abun$stage[bongo_abun$id == 'Thysanoessa inspinata' & bongo_abun$sex == 'F'] <- 'adult'
+bongo_abun$stage[bongo_abun$id == 'Thysanoessa inspinata' & bongo_abun$sex == 'M'] <- 'adult'
+bongo_abun <- bongo_abun %>% 
+  mutate(stage = replace(stage, is.na(stage) & id =='Thysanoessa inspinata', 'juvenile'))
+
+bongo_abun$stage[bongo_abun$id == 'Thysanoessa spinifera' & bongo_abun$sex == 'F'] <- 'adult'
+bongo_abun$stage[bongo_abun$id == 'Thysanoessa spinifera' & bongo_abun$sex == 'M'] <- 'adult'
+bongo_abun <- bongo_abun %>% 
+  mutate(stage = replace(stage, is.na(stage) & id =='Thysanoessa spinifera', 'juvenile'))
+
+bongo_abun$stage[bongo_abun$id == 'Thysanoessa inermis' & bongo_abun$sex == 'F'] <- 'adult'
+bongo_abun$stage[bongo_abun$id == 'Thysanoessa inermis' & bongo_abun$sex == 'M'] <- 'adult'
+bongo_abun <- bongo_abun %>% 
+  mutate(stage = replace(stage, is.na(stage) & id =='Thysanoessa inermis', 'juvenile'))
+
+bongo_abun$stage[bongo_abun$id == 'Tessarabrachion occulatum' & bongo_abun$sex == 'F'] <- 'adult'
+bongo_abun$stage[bongo_abun$id == 'Tessarabrachion occulatum' & bongo_abun$sex == 'M'] <- 'adult'
+bongo_abun <- bongo_abun %>% 
+  mutate(stage = replace(stage, is.na(stage) & id =='Tessarabrachion occulatum', 'juvenile'))
+
+bongo_abun$stage[bongo_abun$id == 'Stylocheiron maximum' & bongo_abun$sex == 'F'] <- 'adult'
+bongo_abun$stage[bongo_abun$id == 'Stylocheiron maximum' & bongo_abun$sex == 'M'] <- 'adult'
+bongo_abun <- bongo_abun %>% 
+  mutate(stage = replace(stage, is.na(stage) & id =='Stylocheiron maximum', 'juvenile'))
+
+bongo_abun$stage[bongo_abun$id == 'Nematocelis difficilis' & bongo_abun$sex == 'F'] <- 'adult'
 
 # working on combined zoop data
 
@@ -251,7 +295,6 @@ bongo_abun <- bongo_abun %>%
 bongo_abun$stage[bongo_abun$stage == "<0.5mm"] <- NA
 bongo_abun$stage[bongo_abun$stage == "<1mm"] <- NA
 bongo_abun$stage[bongo_abun$stage == "1mm"] <- NA
-bongo_abun$stage[bongo_abun$stage == "s0"] <- NA
 bongo_abun$stage[bongo_abun$stage == "napulius"] <- "nauplius"
 
 unique_spp <- unique(bongo_abun$scientificname)
