@@ -6,7 +6,7 @@
 
 🚢 Recommended citation for the record:
 
-Hunt, B., Mahara, N., & Pakhomov, E. (2023). Zooplankton Bongo Net Data from the 2019 and 2020 Gulf of Alaska International Year of the Salmon Expeditions [Data set]. North Pacific Anadromous Fish Commission. https://doi.org/10.21966/7cmt-ca72
+Hunt, B., Mahara, N., & Pakhomov, E. (2023). Zooplankton Bongo Net Data from the 2019 and 2020 Gulf of Alaska International Year of the Salmon Expeditions (v1.0) [Data set]. North Pacific Anadromous Fish Commission. https://doi.org/10.21966/7cmt-ca72
 
 🐟 The repository is structured as follows: 
   * `original_data` contains processed data files that have been sent to the IYS Data Scientists that have not been formatted to the IYS Data Template.
