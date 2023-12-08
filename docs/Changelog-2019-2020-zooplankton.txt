@@ -1,0 +1,35 @@
+# Changelog for 2019 and 2020  IYS Bongo Data
+
+The original data files used for the standardization of the 2019 and 2020 IYS zooplankton bongo data are:
+
+Metadata: 
+
+- Bongo2020_metadata.xlsx
+- IYS cruise logbook_2019.xlsx
+
+Data:
+
+- IYSZoopAbund2019_2020Long.csv
+- IYSKaganoSpecRemovedfromNet.csv
+
+The file used for the previous, unreleased version of this data (IYS zooplankton taxonomy data 20210115.xlsx) is archived in /original_data/archived. The new data source files (note - data source files, not metadata source files) were received from Joanne Breckenridge (UBC) who has connected with the data provider of the previous version of this dataset to ensure the changes captured in the new source files are accurate. 
+
+This changelog highlights any changes made to the data package between this version and the previous, unreleased version. Any changes made on the data source files to aid with standardization to OBIS have been captured in the .Rmd script 'data_wrangle_bongo.Rmd' and are not recorded here. 
+
+All notable changes to this project will be documented in this file. Any scripts used to aid in data tidying can be found in `data_wrangle_bongo.Rmd`.
+
+## [Unreleased]
+
+### Changed
+* Using updated files (IYSZoopAbund2019_2020Long.csv and IYSKaganoSpecRemovedfromNet.csv) from Joanne Breckenridge to standardize the data to Darwin Core for publication to OBIS. 
+* Moved the previous version used for data standardization (IYS zooplankton taxonomy data 20210115.xlsx) to the original_data/archive folder. 
+
+### Added
+*/docs/IYS Notes on whether specimens were removed from samples.docx
+*/docs/Notes Conflation of Calanus and Neocalanus.docx
+*/docs/Supplementary Material-Zooplankton (Bongo) data from the 2019 GOA IYS Expedition.txt
+
+### Removed
+* GoA_2020_Bongo.Rmd file from /scripts -- the information included in this script has been incorporated in the overall data_wrangle_bongo.Rmd file. 
+* GoA_2020_Bongo_Changelog.Rmd -- where relevant, the information from that 2020 changelog has been captured in this changelog.
+* changelog_bongo.Rmd -- where relevant, the information from that 2019 changelog has been captured in this changelog.

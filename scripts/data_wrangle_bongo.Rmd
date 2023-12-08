@@ -122,7 +122,7 @@ bongo_fnl <- bongo_fnl %>%
   mutate(geodeticDatum = "WGS84",
          language = "en",
          modified = lubridate::today(),
-         bibliographicCitation = "Hunt, B., Mahara, N., & Pakhomov, E. (2023). Zooplankton Bongo Net Data from the 2019 and 2020 Gulf of Alaska International Year of the Salmon Expeditions [Data set]. North Pacific Anadromous Fish Commission. https://doi.org/10.21966/7cmt-ca72",
+         bibliographicCitation = "Hunt, B., Mahara, N., & Pakhomov, E. (2023). Zooplankton Bongo Net Data from the 2019 and 2020 Gulf of Alaska International Year of the Salmon Expeditions (v1.0). North Pacific Anadromous Fish Commission. https://doi.org/10.21966/7cmt-ca72",
          datasetID = "https://doi.org/10.21966/7cmt-ca72",
          license = "https://creativecommons.org/licenses/by/4.0/legalcode",
          informationWithheld = "Contact data provider for information on abundance, sizes and biomass.",
@@ -303,6 +303,7 @@ bongo_abun$scientificname <- gsub("Neocalanus\\+Calanus C1\\-C3", "Calanidae", b
 bongo_abun$scientificname <- gsub("Neocalanus flemingeri/plumchrus C4-C6", "Neocalanus", bongo_abun$scientificname)
 bongo_abun$scientificname <- gsub("Calanus marshallae C4-C6", "Calanus marshallae", bongo_abun$scientificname)
 bongo_abun$scientificname <- gsub("^Euphausiidaeae$", "Euphausiidae", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Euphausiidaeaeae", "Euphausiidae", bongo_abun$scientificname)
 
 # As we have now changed all the names in the original dataframe (bongo2019_abun) to fit the entries in the WoRMS database registry, we can use worrms::wm_records_names() again to find all the taxonomic information. 
 bongo_worms_id <- worrms::wm_records_names(unique(bongo_abun$scientificname), marine_only = FALSE) %>%
@@ -322,9 +323,7 @@ dup_entries <- bongo_worms_id %>%
   group_by(scientificname) %>%
   filter(n() > 1)
 
-#TODO: Fix this:
-bongo_abun$scientificname <- gsub("Euphausiidaeaeae", "Euphausiidae", bongo_abun$scientificname)
-
+# Confirm all names in our original data table have an associated AphiaID.
 no_worms_id_2 <- left_join(bongo_abun, bongo_worms_id, by = "scientificname") %>% filter(is.na(AphiaID)) %>% distinct(scientificname)
 
 ```
@@ -357,13 +356,13 @@ bongo_abun <- bongo_abun %>%
   ungroup()
 
 bongo_abun <- bongo_abun %>%
-  mutate(authority = str_replace(authority, "\\(|\\)", ""),
+  mutate(authority = str_replace_all(authority, "\\(|\\)", ""),
          scientificName = ifelse(!is.na(authority),
                                  paste0(scientificName, " (", authority, ")"),
                                  scientificName)) %>%
   rename(scientificNameAuthorship = authority)
 
-# In the occurrence data file there is no field to include abundance.
+# In the occurrence data file there is no field to include abundance. This will get included in the eMOF. 
 bongo_occ <- bongo_abun %>% select(-abundance)
 
 # Check for duplicated occurrenceIDs:
@@ -385,15 +384,10 @@ We create two tables which we eventually merge together into a single eMOF data 
 
 ``` {r eMOF Bongo abundance, warning = FALSE, message = FALSE}
 
-bongo <- bongo %>%
-  mutate(volume_filtered = case_when(
-    flowmeter_vs_depth_estimated_ratio >= 0.5 ~ flowmeter_volume_filtered,
-    flowmeter_vs_depth_estimated_ratio < 0.5 ~ depth_estimated_volume_filtered))
-
 bongo_sampling <- bongo %>%
   select(eventID,
          tow_distance,
-         volume_filtered) %>%
+         volume_filtered = sampleSizeValue) %>%
   mutate(speed_tow = 1) %>%
   distinct(eventID, .keep_all = TRUE) %>% 
   mutate_all(as.character) %>%
