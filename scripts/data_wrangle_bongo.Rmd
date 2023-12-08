@@ -23,18 +23,20 @@ library(gtools)
 This .Rmd file describes the workflow to standardize the 2019 and 2020 zooplankton taxonomy and abundance data from the International Year of the Salmon High Seas Expeditions to Darwin Core, to allow publication to the Ocean Biodiversity Information System (OBIS). This file is divided into three sections that describe creating the following data tables: 1) Event Core, 2) occurrence extension and 3) extended measurement or fact extension. The script uses the following data sources:
 
 __Metadata__:
-/original_data/IYS cruise logbook_2019.xlsx
-/original_data/Bongo2020_metadata.xlsx
+
+* /original_data/IYS cruise logbook_2019.xlsx
+* /original_data/Bongo2020_metadata.xlsx
 
 __Data__: 
-/original_data/IYSZoopAbund2019_2020Long.csv
-/original_data/IYSKaganoSpecRemovedfromNet.csv
+
+* /original_data/IYSZoopAbund2019_2020Long.csv
+* /original_data/IYSKaganoSpecRemovedfromNet.csv
 
 ## Section 1. Event Core
 
 The 2019 and 2020 zooplankton data is collected during multiple sampling events, where a paired bongo net is deployed and retrieved vertically. Given this set up, we standardize the data with an Event data file at it's core. This data table will include metadata on the sampling event (date, time, geographic coordinates, sampling effort). We have to make sure that the date/time follows the ISO-8601 standards, and that all sampling events have a unique identifier (eventID) under which the other data files will be nested.
 
-``` {r data wrangle, eval = FALSE}
+``` {r data wrangle, warning = FALSE}
 bongo_2019 <- read_excel(here("original_data", "IYS cruise logbook_2019.xlsx"),
                              sheet = "Bongo metadata") %>%
   janitor::clean_names() %>% 
@@ -138,9 +140,8 @@ write_csv(bongo_fnl, here("standardized_data", "bongo2019_2020_event.csv"))
 ## Section 2. Occurrence extension.
 
 In the following section we develop an occurrence extension that will be nested under the Event Core. The occurrence extension will have unique occurrenceIDs that are associated with a specific observation of a taxa/lifestage/sex combination at a sampling station. These occurrenceIDs will therefore follow a similar format to the eventIDs and be nested under these IDs. On April 4, 2023 we received updated information from Joanne Breckenridge (UBC) to be included in the occurrence table. The occurrenceIDs will have data on taxa (identified to the lowest rank practical), developmental stage and sex. The observed taxa are cross referenced to the WoRMS database. For this to happen, some ids have been modified slightly, however the original recording of the taxa has been preserved under _verbatimIdentification_. 
-## Occurrence extension.
 
-``` {r bongo2019 abundance occ, eval = FALSE, warning = FALSE}
+``` {r bongo2019 abundance occ, warning = FALSE}
 bongo_abun <- read.csv(here("original_data", "IYSZoopAbund2019_2020Long.csv")) %>%
   janitor::clean_names()
 
@@ -162,7 +163,7 @@ bongo_abun <- rbind(bongo2019_abun, bongo2020_abun)
 
 The following section is per Joanne Breckenridge to improve the estimates for the abundance data associated with certain observed taxa:
 
-```{r}
+```{r, warning = FALSE, message = FALSE}
 bongo_abun$flowProp <- bongo_abun$vol_flow_est/bongo_abun$vol_depth_est
 
 bongo_abun <- bongo_abun %>% 
@@ -220,7 +221,7 @@ bongo_abun$id[bongo_abun$id == 'Neocalanus sp.' & bongo_abun$stage %in% c("C1", 
 
 Manual inspection of the `bongo_abun` dataframe shows that there are still a few species (id) that will need slight changes in their spelling, as the worrms package does not recognize 'sp.' etc. Additionally, some ids contain a lifestage (larvae, egg, trochophores, etc). These are also mentioned in a column 'lifestage', so they are removed from the species id. These manual changes are listed below and are not made in the raw data file used (`IYSZoopabund2019_2020Long.csv`). This way the original species description is still provided. We ensure we keep the original recording of the observation in the column _verbatimIdentification_.
 
-```{r}
+```{r, message = FALSE}
 
 bongo_abun$verbatimIdentification = bongo_abun$id
 bongo_abun$identificationQualifier <- ifelse(grepl("Neocalanus\\+Calanus C1\\-C3|Neocalanus flemingeri/plumchrus C4-C6",
@@ -262,7 +263,7 @@ no_worms_id <- left_join(bongo_abun, worms_id, by = "scientificname") %>% filter
 
 These species listed in the the `no_worms_id` table will need to have their names changed in the original dataframe (bongo_abun) which we'll do below. I write this out so it is clear which names or species observations have been altered, so this can be verified. Verification has been done with the data provider.  
 
-``` {r, eval = FALSE}
+``` {r, message = FALSE}
 bongo_abun$scientificname <- gsub("^Chaetognath$", "Chaetognatha", bongo_abun$scientificname)
 bongo_abun$scientificname <- gsub("Disconchoecia elegans", "Discoconchoecia elegans", bongo_abun$scientificname)
 bongo_abun$scientificname <- gsub("Euphausiid", "Euphausiidae", bongo_abun$scientificname)
@@ -330,7 +331,7 @@ no_worms_id_2 <- left_join(bongo_abun, bongo_worms_id, by = "scientificname") %>
 
 Merge this dataset back into original dataframe. 
 
-``` {r, eval = FALSE}
+``` {r, message = FALSE}
 
 bongo_abun <- left_join(bongo_abun, bongo_worms_id, by = "scientificname")
 bongo_abun <- bongo_abun %>%
@@ -382,7 +383,7 @@ Add information on the sampling effort (the volume of sea water filtered, tow di
 
 We create two tables which we eventually merge together into a single eMOF data table. The first table will be specific to information that can be nested under the eventID of the sampling event. This is information on the volume filtered, speed of tow and tow distance. The second table provides further information on taxa abundance, as well as controlled vocabulary for associated sex and developmental stages. 
 
-``` {r eMOF Bongo abundance, eval = FALSE}
+``` {r eMOF Bongo abundance, warning = FALSE, message = FALSE}
 
 bongo <- bongo %>%
   mutate(volume_filtered = case_when(
@@ -399,7 +400,7 @@ bongo_sampling <- bongo %>%
   pivot_longer(cols = tow_distance:speed_tow,
                names_to = "measurementType",
                values_to = "measurementValue") %>%
-  mutate(measurementID = paste(eventID, "bongo", measurementType, sep = ":"),
+  mutate(measurementID = paste(eventID, "bongo", measurementType, sep = "-"),
          measurementTypeID = case_when(
            measurementType == "tow_distance" ~ "http://vocab.nerc.ac.uk/collection/P01/current/LENTRACK/",
            measurementType == "volume_filtered" ~ "http://vocab.nerc.ac.uk/collection/P01/current/VOLWBSMP/",
@@ -473,7 +474,7 @@ write_csv(bongo2019_2020_emof, here("standardized_data", "bongo2019_2020_emof.cs
 
 Run some basic QAQC tests to ensure compatibility with other data in OBIS.
 
-``` {r bongo_visualizations, eval = FALSE}
+``` {r bongo_visualizations, message = FALSE}
 
 # Plot points on a map:
 bongo_fnl$decimalLatitude <- as.numeric(bongo_fnl$decimalLatitude)
