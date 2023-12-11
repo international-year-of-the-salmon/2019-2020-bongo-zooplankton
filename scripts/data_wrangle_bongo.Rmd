@@ -15,9 +15,6 @@ library(janitor)
 library(readxl)
 library(here)
 library(parsedate)
-library(googledrive)
-library(uuid)
-library(gtools)
 ```
 
 This .Rmd file describes the workflow to standardize the 2019 and 2020 zooplankton taxonomy and abundance data from the International Year of the Salmon High Seas Expeditions to Darwin Core, to allow publication to the Ocean Biodiversity Information System (OBIS). This file is divided into three sections that describe creating the following data tables: 1) Event Core, 2) occurrence extension and 3) extended measurement or fact extension. The script uses the following data sources:
@@ -31,6 +28,8 @@ __Data__:
 
 * /original_data/IYSZoopAbund2019_2020Long.csv
 * /original_data/IYSKaganoSpecRemovedfromNet.csv
+
+In addition, some lines of code were taken from a script written by Joanne Breckenridge's to ensure consistency in the way taxa were recorded. Please note however, that in her script she further standardizes the taxonomic observations to facilitate comparison across vessels. In this script, we use the highest granularity available, where accurate.
 
 ## Section 1. Event Core
 
@@ -161,7 +160,7 @@ bongo2020_abun <- subset(bongo_abun, date >= "2020-03-12" & date <= "2020-04-04"
 bongo_abun <- rbind(bongo2019_abun, bongo2020_abun)
 ```
 
-The following section is per Joanne Breckenridge to improve the estimates for the abundance data associated with certain observed taxa. Credits for the code go to Joanne.
+The following section is per Joanne Breckenridge to improve the estimates for the abundance data associated with certain observed taxa, and to add the lifestage for Euphausiids after Joanne consulted with Natalie Mahara. Credits for the code go to Joanne.
 
 ```{r, warning = FALSE, message = FALSE}
 bongo_abun$flowProp <- bongo_abun$vol_flow_est/bongo_abun$vol_depth_est
@@ -220,11 +219,30 @@ bongo_abun <- bongo_abun %>%
 
 bongo_abun$stage[bongo_abun$id == 'Nematocelis difficilis' & bongo_abun$sex == 'F'] <- 'adult'
 
-# working on combined zoop data
+# Some additional standardization as per Joanne Breckenridge, or after consultation with Alexei Pinchuk/Moira Galbraith.
+# Please note, that I am not doing any lumping of taxa here, however, if at a later stage this was revised that revision is included. 
+# The previous identification of the taxa will remain recorded under previousIdentifications:
+bongo_abun <- bongo_abun %>%
+  mutate(previousIdentifications = case_when(
+    bongo_abun$id == "Primno pacifica" ~ "Primno pacifica",
+    bongo_abun$id == "Scaphocalanus brevicaudatus" ~ "Scaphocalanus brevicaudatus", 
+    bongo_abun$id == "Lucicutia sp." ~ "Lucicutia sp.",
+    bongo_abun$id == "Aglantha sp." ~ "Aglantha sp.",
+    bongo_abun$id == "Scolecithricella sp." & bongo_abun$stage %in% c("C5") ~ "Scolecithricella sp.",
+    bongo_abun$id == "Mesocalanus sp." ~ "Mesocalanus sp.",
+    bongo_abun$id == "Racovitzanus sp." ~ "Racovitzanus sp.",
+    bongo_abun$id == "Ctenocalanus sp." ~ "Ctenocalanus sp."))
 
 bongo_abun$id[bongo_abun$id == 'Primno pacifica' ] <- 'Primno abyssalis'
 bongo_abun$id[bongo_abun$id == 'Scaphocalanus brevicaudatus' ] <- 'Spinocalanus brevicaudatus'
+bongo_abun$id[bongo_abun$id == "Lucicutia sp." ] <- "Lucicutia flavicornis"
+bongo_abun$id[bongo_abun$id == "Aglantha sp." ] <- "Aglantha digitale"
+bongo_abun$id[bongo_abun$id == "Scolecithricella sp." & bongo_abun$stage %in% c("C5")] <- "Scolecithricella minor"
+bongo_abun$id[bongo_abun$id == "Mesocalanus sp." ] <- "Mesocalanus tenuicornis"
+bongo_abun$id[bongo_abun$id == "Racovitzanus sp." ] <- "Racovitzanus antarcticus"
+bongo_abun$id[bongo_abun$id == "Ctenocalanus sp." ] <- "Ctenocalanus vanus"
 
+# working on combined zoop data
 bongo_abun <- bongo_abun %>% 
   mutate(vessel = case_when(
     yearletter == "A" ~ "Kaganovsky",
@@ -237,7 +255,7 @@ bongo_abun$id[bongo_abun$id == "Calanus marshallae" & bongo_abun$station %in% c(
 bongo_abun$id[bongo_abun$vessel %in% c("Kaganovsky", "Legacy") & bongo_abun$id == "Calanus marshallae" & bongo_abun$stage %in% c("C4", "C5", "C6") ] <- "Neocalanus flemingeri/plumchrus C4-C6"
 
 bongo_abun <- bongo_abun %>%
-  group_by(eventID, vessel, station, ind_total, id, sf_proc, stage, sex) %>%
+  group_by(eventID, vessel, station, id, sf_proc, stage, sex, previousIdentifications) %>%
   summarise(abundance = sum(abundance)) %>%
   ungroup()
 
@@ -304,7 +322,7 @@ worms_id <- worrms::wm_records_names(unique(bongo_abun$scientificname), marine_o
 no_worms_id <- left_join(bongo_abun, worms_id, by = "scientificname") %>% filter(is.na(AphiaID)) %>% distinct(scientificname)
 ```
 
-These species listed in the the `no_worms_id` table will need to have their names changed in the original dataframe (bongo_abun) which we'll do below. I write this out so it is clear which names or species observations have been altered, so this can be verified. Verification has been done with the data provider.  
+These species listed in the the `no_worms_id` table will need to have their names changed in the original dataframe (bongo_abun) which we'll do below. I write this out so it is clear which names or species observations have been altered, so this can be verified. Verification has been done with the data provider. Please note that this is only for those taxa observed where there is a mistake in the spelling. Any changes in the taxa observed (not merely the spelling) were identified and addressed in a section above where we included `previousIdentifications` for these observations as well.   
 
 ``` {r, message = FALSE}
 bongo_abun$scientificname <- gsub("^Chaetognath$", "Chaetognatha", bongo_abun$scientificname)
@@ -316,7 +334,6 @@ bongo_abun$scientificname <- gsub("Copepod", "Copepoda", bongo_abun$scientificna
 bongo_abun$scientificname <- gsub("Mesocalanus tenucornis", "Mesocalanus tenuicornis", bongo_abun$scientificname)
 bongo_abun$scientificname <- gsub("Oikopleura dioica", "Oikopleura (Vexillaria) dioica", bongo_abun$scientificname)
 bongo_abun$scientificname <- gsub("Ophuroidea", "Ophiuroidea", bongo_abun$scientificname)
-bongo_abun$scientificname <- gsub("Scaphocalanus brevicaudatus", "Spinocalanus brevicaudatus", bongo_abun$scientificname)
 bongo_abun$scientificname <- gsub("Siphonophore", "Siphonophorae", bongo_abun$scientificname)
 bongo_abun$scientificname <- gsub("Polychaete", "Polychaeta", bongo_abun$scientificname)
 bongo_abun$scientificname <- gsub("Trochophore", "Animalia", bongo_abun$scientificname) 
@@ -332,7 +349,6 @@ bongo_abun$scientificname <- gsub("Nematocelis difficilis", "Nematoscelis diffic
 bongo_abun$scientificname <- gsub("Tuscaretta globulosa", "Tuscaretta globosa", bongo_abun$scientificname)
 bongo_abun$scientificname <- gsub("Bivalve", "Bivalvia", bongo_abun$scientificname)
 bongo_abun$scientificname <- gsub("Symbolophorous californiensis", "Symbolophorus californiensis", bongo_abun$scientificname)
-bongo_abun$scientificname <- gsub("Primno pacifica", "Primno abyssalis", bongo_abun$scientificname)
 bongo_abun$scientificname <- gsub("Aglama elegans", "Agalma elegans", bongo_abun$scientificname)
 bongo_abun$scientificname <- gsub("Ctenophore", "Ctenophora", bongo_abun$scientificname)
 bongo_abun$scientificname <- gsub("Euchirella curticaudata", "Euchirella curticauda", bongo_abun$scientificname)
@@ -347,6 +363,7 @@ bongo_abun$scientificname <- gsub("Neocalanus flemingeri/plumchrus C4-C6", "Neoc
 bongo_abun$scientificname <- gsub("Calanus marshallae C4-C6", "Calanus marshallae", bongo_abun$scientificname)
 bongo_abun$scientificname <- gsub("^Euphausiidaeae$", "Euphausiidae", bongo_abun$scientificname)
 bongo_abun$scientificname <- gsub("Euphausiidaeaeae", "Euphausiidae", bongo_abun$scientificname)
+bongo_abun$scientificname <- gsub("Gaetanus intermedius", "Gaetanus simplex", bongo_abun$scientificname)
 
 # As we have now changed all the names in the original dataframe (bongo2019_abun) to fit the entries in the WoRMS database registry, we can use worrms::wm_records_names() again to find all the taxonomic information. 
 bongo_worms_id <- worrms::wm_records_names(unique(bongo_abun$scientificname), marine_only = FALSE) %>%
@@ -382,7 +399,6 @@ bongo_abun <- bongo_abun %>%
          scientificName = scientificname,
          scientificNameID = lsid,
          authority,
-         individualCount = ind_total,
          abundance,
          lifeStage = stage,
          sex,
@@ -390,7 +406,8 @@ bongo_abun <- bongo_abun %>%
          taxonomicStatus = status,
          identificationQualifier,
          kingdom, phylum, class, order, family, genus,
-         identificationRemarks) %>%
+         identificationRemarks,
+         previousIdentifications) %>%
   group_by(eventID) %>%
   mutate(specificEpithet = stringr::word(scientificName, 2),
          occurrenceID = paste(eventID, row_number(), sep = "-"),
