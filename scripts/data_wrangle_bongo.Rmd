@@ -412,7 +412,7 @@ bongo_abun <- bongo_abun %>%
   mutate(specificEpithet = stringr::word(scientificName, 2),
          occurrenceID = paste(eventID, row_number(), sep = "-"),
          occurrenceStatus = "present",
-         basisOfRecord = "PreservedSpecimen") %>%
+         basisOfRecord = "HumanObservation") %>%
   ungroup()
 
 bongo_abun <- bongo_abun %>%
