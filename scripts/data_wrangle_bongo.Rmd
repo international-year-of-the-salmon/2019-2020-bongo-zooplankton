@@ -471,7 +471,7 @@ bongo_sampling <- bongo %>%
            measurementUnit, measurementUnitID)
 
 bongo_emof <- bongo_abun %>%
-  select(occurrenceID, lifeStage, sex, abundance) %>%
+  select(eventID, occurrenceID, lifeStage, sex, abundance) %>%
   mutate_all(as.character) %>%
   pivot_longer(cols = lifeStage:abundance,
                names_to = "measurementType",
@@ -482,9 +482,11 @@ bongo_emof <- bongo_abun %>%
       measurementType == "sex" ~ "http://vocab.nerc.ac.uk/collection/P01/current/ENTSEX01/",
       measurementType == "abundance" ~ "http://vocab.nerc.ac.uk/collection/P01/current/SDBIOL01/"),
     measurementUnit = case_when(
-      measurementType == "abundance" ~ "individuals per cubic meter"),
+      measurementType == "abundance" ~ "individuals per cubic meter",
+      measurementType != "abundance" ~ "not applicable"),
     measurementUnitID = case_when(
-      measurementUnit == "individuals per cubic meter" ~ "http://vocab.nerc.ac.uk/collection/P06/current/UPMM/"),
+      measurementUnit == "individuals per cubic meter" ~ "http://vocab.nerc.ac.uk/collection/P06/current/UPMM/",
+      measurementUnit == "not applicable" ~ "https://vocab.nerc.ac.uk/collection/P06/current/XXXX/"),
     measurementValueID = case_when(
       measurementValue == "M" ~ "http://vocab.nerc.ac.uk/collection/S10/current/S103/",
       measurementValue == "F" ~ "http://vocab.nerc.ac.uk/collection/S10/current/S102/",
@@ -511,7 +513,8 @@ bongo_emof <- bongo_abun %>%
       measurementValue == "gastrozoid" ~ "",
       measurementValue == "gas float" ~ "",
       measurementValue == "adult" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1116/",
-      measurementValue == "neochaete" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1197/"))
+      measurementValue == "neochaete" ~ "http://vocab.nerc.ac.uk/collection/S11/current/S1197/")) %>%
+  drop_na(measurementValue)
 
 # Combine the emof extension data files:
 bongo2019_2020_emof <- plyr::rbind.fill(bongo_sampling, bongo_emof)
